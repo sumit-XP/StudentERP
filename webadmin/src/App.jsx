@@ -8,6 +8,7 @@ import Assignments from './pages/Assignments.jsx'
 import Announcements from './pages/Announcements.jsx'
 import Analytics from './pages/Analytics.jsx'
 import Fees from './pages/Fees.jsx'
+import Staff from './pages/Staff.jsx'
 import Students from './pages/Students.jsx'
 import AttendanceReports from './pages/AttendanceReports.jsx'
 import Messaging from './pages/Messaging.jsx'
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="/announcements" element={<Announcements />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/fees" element={<Fees />} />
+          <Route path="/staff" element={<Staff />} />
           <Route path="/students" element={<Students />} />
           <Route path="/attendance-reports" element={<AttendanceReports />} />
           <Route path="/messaging" element={<Messaging />} />

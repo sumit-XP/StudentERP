@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && getUserRole() == 'admin';
+    }
+    
+    function isStaff() {
+      return isAuthenticated() && (getUserRole() == 'staff' || getUserRole() == 'admin');
+    }
+    
+    function isParent() {
+      return isAuthenticated() && getUserRole() == 'parent';
+    }
+    
+    function isOwnerOrStaff(userId) {
+      return isAuthenticated() && (request.auth.uid == userId || isStaff());
+    }
+
+    // Users collection - profiles and roles
+    match /users/{userId} {
+      allow read: if isOwnerOrStaff(userId);
+      allow write: if isOwnerOrStaff(userId);
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Students collection
+    match /students/{studentId} {
+      allow read: if isStaff() || 
+                     (isParent() && studentId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentIds);
+      allow write: if isStaff();
+      allow create: if isStaff();
+      
+      // Student documents subcollection
+      match /documents/{docId} {
+        allow read: if isStaff() || 
+                       (isParent() && studentId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentIds);
+        allow write: if isStaff();
+        allow create: if isStaff();
+      }
+    }
+
+    // Guardians collection
+    match /guardians/{guardianId} {
+      allow read: if isOwnerOrStaff(guardianId) || isStaff();
+      allow write: if isOwnerOrStaff(guardianId) || isStaff();
+      allow create: if isStaff();
+    }
+
+    // Attendance collection
+    match /attendance/{attendanceId} {
+      allow read: if isStaff() || 
+                     (isParent() && resource.data.studentId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentIds);
+      allow write: if isStaff();
+      allow create: if isStaff();
+    }
+
+    // Academic records collection
+    match /academicRecords/{recordId} {
+      allow read: if isStaff() || 
+                     (isParent() && resource.data.studentId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentIds);
+      allow write: if isStaff();
+      allow create: if isStaff();
+    }
+
+    // Notifications collection
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && 
+                     (resource.data.recipientId == request.auth.uid || 
+                      resource.data.recipientRole == getUserRole() ||
+                      isStaff());
+      allow write: if isStaff();
+      allow create: if isStaff();
+    }
+
+    // Activity logs collection - read-only for audit
+    match /activityLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false; // Only server can write logs
+    }
+
+    // Classes collection
+    match /classes/{classId} {
+      allow read: if isAuthenticated();
+      allow write: if isStaff();
+      allow create: if isStaff();
+    }
+
+    // Subjects collection
+    match /subjects/{subjectId} {
+      allow read: if isAuthenticated();
+      allow write: if isStaff();
+      allow create: if isStaff();
+    }
+  }
+}

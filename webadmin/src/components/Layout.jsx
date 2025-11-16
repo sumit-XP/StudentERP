@@ -29,7 +29,13 @@ export default function Layout() {
         <NavItem to="/announcements" label="Announcements" />
         <NavItem to="/analytics" label="Analytics" />
         <NavItem to="/fees" label="Fees" />
-        <NavItem to="/students" label="Students" />
+        <div className="px-2 py-2">
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">People Management</div>
+          <div className="ml-2 space-y-1">
+            <NavItem to="/staff" label="Teachers & Staff" />
+            <NavItem to="/students" label="Students" />
+          </div>
+        </div>
         <NavItem to="/attendance-reports" label="Attendance Reports" />
         <NavItem to="/messaging" label="Messaging" />
         <NavItem to="/notifications" label="Notifications" />
