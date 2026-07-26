@@ -1,7 +1,0 @@
-{
-  "projects": {
-    "default": "YOUR_FIREBASE_PROJECT_ID",
-    "dev": "YOUR_FIREBASE_PROJECT_ID_DEV",
-    "prod": "YOUR_FIREBASE_PROJECT_ID_PROD"
-  }
-}

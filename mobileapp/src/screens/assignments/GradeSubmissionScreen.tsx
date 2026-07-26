@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRoute, RouteProp } from '@react-navigation/native';
-import apiClient from '../../api/client';
+import assignmentService from '../../services/assignmentService';
 import { AssignmentsStackParamList } from '../../navigation/features/AssignmentsNavigator';
 
 type RoutePropType = RouteProp<AssignmentsStackParamList, 'GradeSubmission'>;
@@ -29,10 +29,7 @@ const GradeSubmissionScreen: React.FC = () => {
     }
     setSaving(true);
     try {
-      await apiClient.put(`/assignments/submissions/${submissionId}/grade`, {
-        marks: marksNum,
-        feedback,
-      });
+      await assignmentService.gradeSubmission(submissionId, marksNum.toString(), feedback);
       Alert.alert('Success', 'Grade saved!');
     } catch (e: unknown) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Failed to save grade');

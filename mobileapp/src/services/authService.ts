@@ -1,5 +1,5 @@
 import apiClient from '../api/client';
-import { User } from '../types/index';
+import { User, UserRole } from '../types/index';
 
 interface LoginResponse {
   data?: {
@@ -12,26 +12,20 @@ interface LoginResponse {
 
 export const authService = {
   login: async (email: string, password: string): Promise<{ token: string; user: User }> => {
-    const res = await apiClient.post<LoginResponse>('/auth/login', { email, password });
-
-    // Handle both { data: { token, user } } and { token, user } response formats
-    const token = res.data.data?.token ?? res.data.token;
-    const user = res.data.data?.user ?? res.data.user;
-
-    if (!token || !user) {
-      throw new Error('Invalid login response from server');
+    const response = await apiClient.post<{ data?: { token: string; user: User }, token?: string, user?: User }>('/auth/login', { email, password });
+    
+    // Handle both possible structures (data.token vs token directly)
+    if (response.data.data?.token && response.data.data?.user) {
+      return { token: response.data.data.token, user: response.data.data.user };
+    } else if (response.data.token && response.data.user) {
+      return { token: response.data.token, user: response.data.user };
     }
-
-    return { token, user };
+    
+    throw new Error('Invalid response from server');
   },
 
   logout: async (): Promise<void> => {
-    try {
-      await apiClient.post('/auth/logout');
-    } catch {
-      // Continue even if server logout fails (e.g. network error)
-      // The client will still clear the local token
-    }
+    await apiClient.post('/auth/logout');
   },
 };
 

@@ -26,11 +26,12 @@ async function updateInvoiceStatus(invoiceId) {
 export const createFeeStructure = async (req, res) => {
   try {
     const { classId, feeType, amount, dueDate, academicYearId } = req.body;
+    const schoolId = req.tenantId || null;
     if (!classId || !feeType || amount === undefined) return res.status(400).json({ error: "classId, feeType, amount are required" });
     const result = await pool.query(
-      `INSERT INTO fee_structure (class_id, fee_type, amount, due_date, academic_year_id)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [classId, feeType, amount, dueDate, academicYearId]
+      `INSERT INTO fee_structure (class_id, fee_type, amount, due_date, academic_year_id, school_id)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [classId, feeType, amount, dueDate, academicYearId, schoolId]
     );
     res.status(201).json({ feeStructure: result.rows[0] });
   } catch (e) { res.status(500).json({ error: "Failed to create fee structure" }); }
@@ -39,9 +40,11 @@ export const createFeeStructure = async (req, res) => {
 export const listFeeStructure = async (req, res) => {
   try {
     const { classId, academicYearId } = req.query;
+    const schoolId = req.tenantId || null;
     let q = `SELECT fs.*, c.name as class_name, c.section FROM fee_structure fs LEFT JOIN classes c ON fs.class_id=c.id WHERE 1=1`;
     const p = [];
     let i = 0;
+    if (schoolId) { i++; q += ` AND fs.school_id=$${i}`; p.push(schoolId); }
     if (classId) { i++; q += ` AND fs.class_id=$${i}`; p.push(classId); }
     if (academicYearId) { i++; q += ` AND fs.academic_year_id=$${i}`; p.push(academicYearId); }
     q += ` ORDER BY fs.class_id, fs.fee_type`;
@@ -105,6 +108,7 @@ export const generateInvoices = async (req, res) => {
 export const listInvoices = async (req, res) => {
   try {
     const { studentId, classId, status } = req.query;
+    const schoolId = req.tenantId || null;
     let q = `SELECT fi.*, s.student_id as student_number, u.name as student_name, c.name as class_name, c.section
              FROM fee_invoices fi
              JOIN students s ON fi.student_id=s.id
@@ -113,6 +117,7 @@ export const listInvoices = async (req, res) => {
              WHERE 1=1`;
     const p = [];
     let i = 0;
+    if (schoolId) { i++; q += ` AND fi.school_id=$${i}`; p.push(schoolId); }
     if (studentId) { i++; q += ` AND fi.student_id=$${i}`; p.push(studentId); }
     if (classId) { i++; q += ` AND s.class_id=$${i}`; p.push(classId); }
     if (status) { i++; q += ` AND fi.status=$${i}`; p.push(status); }
@@ -248,16 +253,18 @@ export const verifyRazorpayPayment = async (req, res) => {
 export const collectionReport = async (req, res) => {
   try {
     const { startDate, endDate, by = 'day' } = req.query;
+    const schoolId = req.tenantId || null;
     if (!startDate || !endDate) return res.status(400).json({ error: "startDate and endDate are required" });
+    const schoolFilter = schoolId ? ` AND fp.school_id='${schoolId}'` : '';
     if (by === 'method') {
       const r = await pool.query(
-        `SELECT payment_method, SUM(amount_paid) as total FROM fee_payments WHERE payment_date BETWEEN $1 AND $2 GROUP BY payment_method`,
+        `SELECT payment_method, SUM(amount_paid) as total FROM fee_payments fp WHERE payment_date BETWEEN $1 AND $2${schoolFilter} GROUP BY payment_method`,
         [startDate, endDate]
       );
       return res.json({ data: r.rows });
     }
     const r = await pool.query(
-      `SELECT payment_date::date as date, SUM(amount_paid) as total FROM fee_payments WHERE payment_date BETWEEN $1 AND $2 GROUP BY payment_date::date ORDER BY date`,
+      `SELECT payment_date::date as date, SUM(amount_paid) as total FROM fee_payments fp WHERE payment_date BETWEEN $1 AND $2${schoolFilter} GROUP BY payment_date::date ORDER BY date`,
       [startDate, endDate]
     );
     res.json({ data: r.rows });
@@ -267,13 +274,13 @@ export const collectionReport = async (req, res) => {
 export const duesReport = async (req, res) => {
   try {
     const { classId } = req.query;
+    const schoolId = req.tenantId || null;
+    const schoolFilter = schoolId ? ` AND s.school_id='${schoolId}'` : '';
     const r = await pool.query(
       `WITH inv AS (
          SELECT fi.student_id, SUM(fi.total_amount + COALESCE(fi.late_fee,0)) AS total
          FROM fee_invoices fi
          GROUP BY fi.student_id
-       ), pay AS (
-         SELECT fp.invoice_id, SUM(fp.amount_paid) AS paid FROM fee_payments fp GROUP BY fp.invoice_id
        )
        SELECT s.id as student_id, u.name as student_name, s.student_id as student_number, c.name as class_name, c.section,
               COALESCE(inv.total,0) - COALESCE((SELECT SUM(amount_paid) FROM fee_payments p JOIN fee_invoices fi ON p.invoice_id=fi.id WHERE fi.student_id=s.id),0) AS due
@@ -281,7 +288,7 @@ export const duesReport = async (req, res) => {
        JOIN users u ON s.user_id=u.id
        LEFT JOIN classes c ON s.class_id=c.id
        LEFT JOIN inv ON inv.student_id=s.id
-       WHERE ($1::int IS NULL OR s.class_id=$1)
+       WHERE ($1::int IS NULL OR s.class_id=$1)${schoolFilter}
        ORDER BY due DESC`,
       [classId || null]
     );
@@ -396,3 +403,116 @@ export const listDeposits = async (req, res) => {
     res.json({ deposits: r.rows });
   } catch (e) { res.status(500).json({ error: "Failed to list deposits" }); }
 };
+
+// ==================== TASK 8: GST/TAX REPORTS ====================
+
+export const getGSTReport = async (req, res) => {
+  try {
+    const { year } = req.query;
+    if (!year) return res.status(400).json({ error: "year parameter is required" });
+    const gstRate = parseFloat(process.env.GST_RATE || 18);
+    const startDate = `${year}-04-01`;
+    const endDate = `${parseInt(year) + 1}-03-31`;
+    const result = await pool.query(
+      `SELECT EXTRACT(MONTH FROM payment_date) as month, EXTRACT(YEAR FROM payment_date) as payment_year, SUM(amount_paid) as total_collected, COUNT(*) as transaction_count FROM fee_payments WHERE payment_date >= $1 AND payment_date <= $2 GROUP BY EXTRACT(YEAR FROM payment_date), EXTRACT(MONTH FROM payment_date) ORDER BY payment_year, month`,
+      [startDate, endDate]
+    );
+    const months = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
+    const report = result.rows.map(row => {
+      const totalCollected = parseFloat(row.total_collected);
+      const gstAmount = parseFloat((totalCollected * gstRate / 100).toFixed(2));
+      const netAmount = parseFloat((totalCollected - gstAmount).toFixed(2));
+      const monthIndex = (parseInt(row.month) - 4 + 12) % 12;
+      return { month: months[monthIndex], month_number: parseInt(row.month), year: parseInt(row.payment_year), total_collected: totalCollected, gst_rate: gstRate, gst_amount: gstAmount, net_amount: netAmount, transaction_count: parseInt(row.transaction_count) };
+    });
+    const totals = report.reduce((acc, row) => {
+      acc.total_collected += row.total_collected; acc.gst_amount += row.gst_amount; acc.net_amount += row.net_amount; acc.transaction_count += row.transaction_count;
+      return acc;
+    }, { total_collected: 0, gst_amount: 0, net_amount: 0, transaction_count: 0 });
+    res.json({ financial_year: `${year}-${parseInt(year) + 1}`, gst_rate: gstRate, currency: 'INR', report, totals });
+  } catch (error) { res.status(500).json({ error: "Failed to generate GST report" }); }
+};
+
+export const getGSTReportCSV = async (req, res) => {
+  try {
+    const { year } = req.query;
+    if (!year) return res.status(400).json({ error: "year parameter is required" });
+    const gstRate = parseFloat(process.env.GST_RATE || 18);
+    const startDate = `${year}-04-01`;
+    const endDate = `${parseInt(year) + 1}-03-31`;
+    const result = await pool.query(
+      `SELECT EXTRACT(MONTH FROM payment_date) as month, EXTRACT(YEAR FROM payment_date) as payment_year, SUM(amount_paid) as total_collected, COUNT(*) as transaction_count FROM fee_payments WHERE payment_date >= $1 AND payment_date <= $2 GROUP BY EXTRACT(YEAR FROM payment_date), EXTRACT(MONTH FROM payment_date) ORDER BY payment_year, month`,
+      [startDate, endDate]
+    );
+    const months = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
+    let csv = 'Month,Year,Total Collected (INR),GST Rate (%),GST Amount (INR),Net Amount (INR),Transaction Count\n';
+    result.rows.forEach(row => {
+      const totalCollected = parseFloat(row.total_collected);
+      const gstAmount = parseFloat((totalCollected * gstRate / 100).toFixed(2));
+      const netAmount = parseFloat((totalCollected - gstAmount).toFixed(2));
+      const monthIndex = (parseInt(row.month) - 4 + 12) % 12;
+      csv += `${months[monthIndex]},${row.payment_year},${totalCollected},${gstRate},${gstAmount},${netAmount},${row.transaction_count}\n`;
+    });
+    const totals = result.rows.reduce((acc, row) => {
+      acc.total_collected += parseFloat(row.total_collected); acc.gst_amount += parseFloat(row.total_collected) * gstRate / 100; acc.net_amount += parseFloat(row.total_collected) * (1 - gstRate / 100); acc.transaction_count += parseInt(row.transaction_count); return acc;
+    }, { total_collected: 0, gst_amount: 0, net_amount: 0, transaction_count: 0 });
+    csv += `TOTAL,,${totals.total_collected.toFixed(2)},,${totals.gst_amount.toFixed(2)},${totals.net_amount.toFixed(2)},${totals.transaction_count}\n`;
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="gst_report_${year}-${parseInt(year) + 1}.csv"`);
+    res.send(csv);
+  } catch (error) { res.status(500).json({ error: "Failed to generate GST report CSV" }); }
+};
+
+// Student: fetch own fee invoices
+export const getMyInvoices = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const role   = req.user?.role;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    // Find the student record — different lookup for student vs parent
+    let studentRes;
+    if (role === "parent") {
+      studentRes = await pool.query(
+        `SELECT s.id FROM students s WHERE s.parent_id = $1 LIMIT 1`,
+        [userId]
+      );
+    } else {
+      studentRes = await pool.query(
+        `SELECT s.id FROM students s WHERE s.user_id = $1 LIMIT 1`,
+        [userId]
+      );
+    }
+
+    if (!studentRes.rows.length) {
+      return res.json({ invoices: [], items: {} });
+    }
+    const studentId = studentRes.rows[0].id;
+
+    const invRes = await pool.query(
+      `SELECT fi.*, c.name as class_name, c.section
+       FROM fee_invoices fi
+       LEFT JOIN students s ON fi.student_id = s.id
+       LEFT JOIN classes c ON s.class_id = c.id
+       WHERE fi.student_id = $1
+       ORDER BY fi.invoice_date DESC`,
+      [studentId]
+    );
+
+    // Fetch items for each invoice
+    const itemsMap = {};
+    for (const inv of invRes.rows) {
+      const itemsRes = await pool.query(
+        `SELECT * FROM fee_invoice_items WHERE invoice_id = $1`,
+        [inv.id]
+      );
+      itemsMap[inv.id] = itemsRes.rows;
+    }
+
+    res.json({ invoices: invRes.rows, items: itemsMap });
+  } catch (e) {
+    console.error("getMyInvoices error:", e);
+    res.status(500).json({ error: "Failed to fetch your invoices" });
+  }
+};
+

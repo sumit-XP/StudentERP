@@ -7,7 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
-import apiClient from '../../api/client';
+import communicationService from '../../services/communicationService';
 import { Announcement } from '../../types/communication';
 
 const AnnouncementsScreen: React.FC = () => {
@@ -17,11 +17,10 @@ const AnnouncementsScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiClient
-      .get('/communication/announcements')
-      .then((res) => {
-        const data = res.data as { data?: Announcement[] } | Announcement[];
-        setItems(Array.isArray(data) ? data : (data as { data?: Announcement[] }).data ?? []);
+    communicationService
+      .getAnnouncements()
+      .then((data) => {
+        setItems(Array.isArray(data) ? data : data ?? []);
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));

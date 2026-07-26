@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import apiClient from '../../api/client';
+import assignmentService from '../../services/assignmentService';
 import { useAuth } from '../../contexts/AuthContext';
 import { Assignment } from '../../types/assignments';
 import { AssignmentsStackParamList } from '../../navigation/features/AssignmentsNavigator';
@@ -27,11 +27,10 @@ const AssignmentDetailScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiClient
-      .get(`/assignments/${assignmentId}`)
-      .then((res) => {
-        const data = res.data as { data?: Assignment } | Assignment;
-        setAssignment((data as { data?: Assignment }).data ?? (data as Assignment));
+    assignmentService
+      .getAssignmentDetails(assignmentId)
+      .then((data) => {
+        setAssignment(data);
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));

@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import apiClient from '../../api/client';
+import communicationService from '../../services/communicationService';
 import { Conversation } from '../../types/communication';
 import { CommunicationStackParamList } from '../../navigation/features/CommunicationNavigator';
 
@@ -22,13 +22,10 @@ const MessagesListScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiClient
-      .get('/communication/conversations')
-      .then((res) => {
-        const data = res.data as { data?: Conversation[] } | Conversation[];
-        setConversations(
-          Array.isArray(data) ? data : (data as { data?: Conversation[] }).data ?? [],
-        );
+    communicationService
+      .getConversations()
+      .then((data) => {
+        setConversations(Array.isArray(data) ? data : data ?? []);
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));

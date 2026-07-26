@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import apiClient from '../../api/client';
+import feeService from '../../services/feeService';
 
 type ReportTab = 'dues' | 'defaulters' | 'collections';
 
@@ -27,12 +27,11 @@ const FeeReportsScreen: React.FC = () => {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await apiClient.get(ENDPOINTS[activeTab]);
-      const result = res.data as { data?: Record<string, unknown>[] } | Record<string, unknown>[];
+      const result = await feeService.getFeeReports(ENDPOINTS[activeTab]);
       setData(
         Array.isArray(result)
           ? result
-          : (result as { data?: Record<string, unknown>[] }).data ?? [],
+          : result ?? [],
       );
     } catch (e: unknown) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Failed to load report');

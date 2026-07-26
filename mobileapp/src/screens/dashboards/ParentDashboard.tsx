@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import apiClient from '../../api/client';
+import { dashboardService } from '../../services/dashboardService';
 
 interface DashboardMetric {
   label: string;
@@ -13,10 +13,9 @@ const ParentDashboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiClient
-      .get('/analytics/dashboard')
-      .then((res) => {
-        const data = res.data as Record<string, unknown>;
+    dashboardService
+      .getDashboardAnalytics()
+      .then((data: Record<string, unknown>) => {
         const mapped: DashboardMetric[] = Object.entries(data).map(([k, v]) => ({
           label: k,
           value: typeof v === 'object' ? JSON.stringify(v) : String(v),

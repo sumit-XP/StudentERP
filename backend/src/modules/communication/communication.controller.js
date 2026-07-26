@@ -21,16 +21,16 @@ export const createAnnouncement = async (req, res) => {
     }
 
     // Get creator ID
-    const userResult = await pool.query("SELECT id FROM users WHERE firebase_uid = $1", [uid]);
+    const userResult = await pool.query("SELECT id FROM users WHERE uid = $1", [uid]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
     const createdBy = userResult.rows[0].id;
 
     const result = await pool.query(
-      `INSERT INTO announcements (title, content, announcement_type, target_audience, class_id, created_by, scheduled_at, expires_at) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [title, content, announcementType, targetAudience, classId, createdBy, scheduledAt, expiresAt]
+      `INSERT INTO announcements (title, content, announcement_type, target_audience, class_id, created_by, scheduled_at, expires_at, school_id) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [title, content, announcementType, targetAudience, classId, createdBy, scheduledAt, expiresAt, req.tenantId]
     );
 
     // Create notifications for target audience
@@ -50,9 +50,19 @@ export const createAnnouncement = async (req, res) => {
 async function createNotificationsForAnnouncement(announcement) {
   try {
     let targetUsers = [];
+    const roleAudienceMap = {
+      students: 'student',
+      teachers: 'teacher',
+      parents: 'parent',
+      admins: 'admin',
+      student: 'student',
+      teacher: 'teacher',
+      parent: 'parent',
+      admin: 'admin',
+    };
 
     if (announcement.target_audience === 'all') {
-      const result = await pool.query("SELECT id FROM users WHERE is_active = true");
+      const result = await pool.query("SELECT id FROM users WHERE is_active = true AND school_id = $1", [announcement.school_id]);
       targetUsers = result.rows.map(row => row.id);
     } else if (announcement.target_audience === 'class_specific' && announcement.class_id) {
       // Get all students and their parents in the specific class
@@ -68,20 +78,21 @@ async function createNotificationsForAnnouncement(announcement) {
       targetUsers = result.rows.map(row => row.id);
     } else {
       // Get users by role
+      const roleName = roleAudienceMap[announcement.target_audience] || announcement.target_audience;
       const result = await pool.query(`
         SELECT u.id FROM users u 
         JOIN roles r ON u.role_id = r.id 
-        WHERE r.name = $1 AND u.is_active = true
-      `, [announcement.target_audience]);
+        WHERE r.name = $1 AND u.is_active = true AND u.school_id = $2
+      `, [roleName, announcement.school_id]);
       targetUsers = result.rows.map(row => row.id);
     }
 
     // Create notifications for all target users
     for (const userId of targetUsers) {
       await pool.query(
-        `INSERT INTO notifications (user_id, title, message, notification_type, reference_id, reference_type) 
-         VALUES ($1, $2, $3, 'announcement', $4, 'announcement')`,
-        [userId, announcement.title, announcement.content, announcement.id]
+        `INSERT INTO notifications (user_id, title, message, notification_type, reference_id, reference_type, school_id) 
+         VALUES ($1, $2, $3, 'announcement', $4, 'announcement', $5)`,
+        [userId, announcement.title, announcement.content, announcement.id, announcement.school_id || null]
       );
     }
   } catch (error) {
@@ -107,7 +118,7 @@ export const getAnnouncements = async (req, res) => {
     const userResult = await pool.query(
       `SELECT u.id, r.name as role_name FROM users u 
        JOIN roles r ON u.role_id = r.id 
-       WHERE u.firebase_uid = $1`,
+       WHERE u.uid = $1`,
       [uid]
     );
     if (userResult.rows.length === 0) {
@@ -126,11 +137,17 @@ export const getAnnouncements = async (req, res) => {
     const queryParams = [isActive === 'true'];
     let paramCount = 1;
 
+    if (req.tenantId) {
+      paramCount++;
+      query += ` AND a.school_id = $${paramCount}`;
+      queryParams.push(req.tenantId);
+    }
+
     // Filter based on user role and target audience
     if (user.role_name === 'student') {
       // Students see announcements for 'all', 'students', or their specific class
       const studentResult = await pool.query(
-        "SELECT class_id FROM students s JOIN users u ON s.user_id = u.id WHERE u.firebase_uid = $1",
+        "SELECT class_id FROM students s JOIN users u ON s.user_id = u.id WHERE u.uid = $1",
         [uid]
       );
       
@@ -206,8 +223,8 @@ export const updateAnnouncement = async (req, res) => {
            scheduled_at = COALESCE($6, scheduled_at),
            expires_at = COALESCE($7, expires_at),
            is_active = COALESCE($8, is_active)
-       WHERE id = $9 RETURNING *`,
-      [title, content, announcementType, targetAudience, classId, scheduledAt, expiresAt, isActive, id]
+       WHERE id = $9 AND school_id = $10 RETURNING *`,
+      [title, content, announcementType, targetAudience, classId, scheduledAt, expiresAt, isActive, id, req.tenantId]
     );
 
     if (result.rows.length === 0) {
@@ -229,7 +246,7 @@ export const deleteAnnouncement = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const result = await pool.query("DELETE FROM announcements WHERE id = $1 RETURNING *", [id]);
+    const result = await pool.query("DELETE FROM announcements WHERE id = $1 AND school_id = $2 RETURNING *", [id, req.tenantId]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Announcement not found" });
@@ -247,6 +264,64 @@ export const deleteAnnouncement = async (req, res) => {
 
 // ==================== MESSAGES/CHAT ====================
 
+// Get possible message recipients
+export const getMessageRecipients = async (req, res) => {
+  try {
+    const { search = '', role, limit = 10 } = req.query;
+    const { uid } = req.user;
+
+    const currentUserResult = await pool.query(
+      `SELECT u.id, u.school_id, r.name as role_name
+       FROM users u
+       JOIN roles r ON u.role_id = r.id
+       WHERE u.uid = $1`,
+      [uid]
+    );
+
+    if (currentUserResult.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const currentUser = currentUserResult.rows[0];
+    const params = [currentUser.id];
+    let paramCount = 1;
+    let query = `
+      SELECT u.id, u.name, u.email, r.name as role_name
+      FROM users u
+      JOIN roles r ON u.role_id = r.id
+      WHERE u.is_active = true AND u.id <> $1
+    `;
+
+    if (currentUser.school_id) {
+      paramCount++;
+      query += ` AND u.school_id = $${paramCount}`;
+      params.push(currentUser.school_id);
+    }
+
+    if (search) {
+      paramCount++;
+      query += ` AND (u.name ILIKE $${paramCount} OR u.email ILIKE $${paramCount})`;
+      params.push(`%${search}%`);
+    }
+
+    if (role) {
+      paramCount++;
+      query += ` AND r.name = $${paramCount}`;
+      params.push(role);
+    }
+
+    paramCount++;
+    query += ` ORDER BY u.name ASC LIMIT $${paramCount}`;
+    params.push(Math.min(Number(limit) || 10, 25));
+
+    const result = await pool.query(query, params);
+    res.json({ users: result.rows });
+  } catch (error) {
+    console.error("Get message recipients error:", error);
+    res.status(500).json({ error: "Failed to fetch message recipients" });
+  }
+};
+
 // Send Message
 export const sendMessage = async (req, res) => {
   try {
@@ -258,23 +333,43 @@ export const sendMessage = async (req, res) => {
     }
 
     // Get sender ID
-    const userResult = await pool.query("SELECT id FROM users WHERE firebase_uid = $1", [uid]);
+    const userResult = await pool.query("SELECT id FROM users WHERE uid = $1", [uid]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
     const senderId = userResult.rows[0].id;
 
+    if (receiverId === 'common_group') {
+      const result = await pool.query(
+        `INSERT INTO messages (sender_id, receiver_id, message_text, message_type, file_url, parent_message_id, school_id, group_type) 
+         VALUES ($1, NULL, $2, $3, $4, $5, $6, 'common_group') RETURNING *`,
+        [senderId, messageText, messageType, fileUrl, parentMessageId, req.tenantId]
+      );
+      return res.status(201).json({
+        message: "Message sent to common group successfully",
+        messageData: result.rows[0]
+      });
+    }
+
+    const receiverResult = await pool.query(
+      "SELECT id FROM users WHERE id = $1 AND school_id = $2 AND is_active = true",
+      [receiverId, req.tenantId]
+    );
+    if (receiverResult.rows.length === 0) {
+      return res.status(404).json({ error: "Receiver not found in your school" });
+    }
+
     const result = await pool.query(
-      `INSERT INTO messages (sender_id, receiver_id, message_text, message_type, file_url, parent_message_id) 
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [senderId, receiverId, messageText, messageType, fileUrl, parentMessageId]
+      `INSERT INTO messages (sender_id, receiver_id, message_text, message_type, file_url, parent_message_id, school_id) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [senderId, receiverId, messageText, messageType, fileUrl, parentMessageId, req.tenantId]
     );
 
     // Create notification for receiver
     await pool.query(
-      `INSERT INTO notifications (user_id, title, message, notification_type, reference_id, reference_type) 
-       VALUES ($1, 'New Message', $2, 'message', $3, 'message')`,
-      [receiverId, messageText.substring(0, 100), result.rows[0].id]
+      `INSERT INTO notifications (user_id, title, message, notification_type, reference_id, reference_type, school_id) 
+       VALUES ($1, 'New Message', $2, 'message', $3, 'message', $4)`,
+      [receiverId, messageText.substring(0, 100), result.rows[0].id, req.tenantId]
     );
 
     res.status(201).json({
@@ -299,26 +394,46 @@ export const getMessages = async (req, res) => {
     }
 
     // Get current user ID
-    const userResult = await pool.query("SELECT id FROM users WHERE firebase_uid = $1", [uid]);
+    const userResult = await pool.query("SELECT id FROM users WHERE uid = $1", [uid]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
     const currentUserId = userResult.rows[0].id;
 
+    if (otherUserId === 'common_group') {
+      const result = await pool.query(
+        `SELECT m.*, 
+           sender.name as sender_name, 
+           'Common Group' as receiver_name,
+           parent.message_text as parent_message_text,
+           (m.sender_id = $4) as is_mine
+         FROM messages m
+         JOIN users sender ON m.sender_id = sender.id
+         LEFT JOIN messages parent ON m.parent_message_id = parent.id
+         WHERE m.group_type = 'common_group' AND m.school_id = $3
+         ORDER BY m.created_at DESC
+         LIMIT $1 OFFSET $2`,
+        [limit, offset, req.tenantId, currentUserId]
+      );
+      return res.json({ messages: result.rows.reverse() });
+    }
+
     const result = await pool.query(
       `SELECT m.*, 
          sender.name as sender_name, 
          receiver.name as receiver_name,
-         parent.message_text as parent_message_text
+         parent.message_text as parent_message_text,
+         (m.sender_id = $1) as is_mine
        FROM messages m
        JOIN users sender ON m.sender_id = sender.id
        JOIN users receiver ON m.receiver_id = receiver.id
        LEFT JOIN messages parent ON m.parent_message_id = parent.id
-       WHERE (m.sender_id = $1 AND m.receiver_id = $2) 
-          OR (m.sender_id = $2 AND m.receiver_id = $1)
+       WHERE ((m.sender_id = $1 AND m.receiver_id = $2) 
+          OR (m.sender_id = $2 AND m.receiver_id = $1))
+         AND m.school_id = $5
        ORDER BY m.created_at DESC
        LIMIT $3 OFFSET $4`,
-      [currentUserId, otherUserId, limit, offset]
+      [currentUserId, otherUserId, limit, offset, req.tenantId]
     );
 
     // Mark messages as read
@@ -340,42 +455,108 @@ export const getConversations = async (req, res) => {
     const { uid } = req.user;
 
     // Get current user ID
-    const userResult = await pool.query("SELECT id FROM users WHERE firebase_uid = $1", [uid]);
+    const userResult = await pool.query("SELECT id FROM users WHERE uid = $1", [uid]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
     const currentUserId = userResult.rows[0].id;
 
     const result = await pool.query(
-      `SELECT DISTINCT
-         CASE 
-           WHEN m.sender_id = $1 THEN m.receiver_id 
-           ELSE m.sender_id 
-         END as other_user_id,
-         CASE 
-           WHEN m.sender_id = $1 THEN receiver.name 
-           ELSE sender.name 
-         END as other_user_name,
-         CASE 
-           WHEN m.sender_id = $1 THEN receiver.profile_image_url 
-           ELSE sender.profile_image_url 
-         END as other_user_image,
-         MAX(m.created_at) as last_message_time,
+      `WITH conversation_users AS (
+         SELECT DISTINCT
+           CASE 
+             WHEN m.sender_id = $1 THEN m.receiver_id 
+             ELSE m.sender_id 
+           END as other_user_id,
+           CASE 
+             WHEN m.sender_id = $1 THEN receiver.name 
+             ELSE sender.name 
+           END as other_user_name,
+           CASE 
+             WHEN m.sender_id = $1 THEN receiver.profile_image_url 
+             ELSE sender.profile_image_url 
+           END as other_user_image,
+           MAX(m.created_at) as last_message_time,
+           COUNT(CASE WHEN m.receiver_id = $1 AND m.is_read = false THEN 1 END) as unread_count
+         FROM messages m
+         JOIN users sender ON m.sender_id = sender.id
+         JOIN users receiver ON m.receiver_id = receiver.id
+         WHERE (m.sender_id = $1 OR m.receiver_id = $1) AND m.school_id = $2
+         GROUP BY 
+           CASE WHEN m.sender_id = $1 THEN m.receiver_id ELSE m.sender_id END,
+           CASE WHEN m.sender_id = $1 THEN receiver.name ELSE sender.name END,
+           CASE WHEN m.sender_id = $1 THEN receiver.profile_image_url ELSE sender.profile_image_url END
+       )
+       SELECT 
+         cu.other_user_id,
+         cu.other_user_name,
+         cu.other_user_image,
+         cu.last_message_time,
+         cu.unread_count,
          (SELECT message_text FROM messages 
-          WHERE (sender_id = $1 AND receiver_id = other_user_id) 
-             OR (sender_id = other_user_id AND receiver_id = $1)
-          ORDER BY created_at DESC LIMIT 1) as last_message,
-         COUNT(CASE WHEN m.receiver_id = $1 AND m.is_read = false THEN 1 END) as unread_count
-       FROM messages m
-       JOIN users sender ON m.sender_id = sender.id
-       JOIN users receiver ON m.receiver_id = receiver.id
-       WHERE m.sender_id = $1 OR m.receiver_id = $1
-       GROUP BY other_user_id, other_user_name, other_user_image
-       ORDER BY last_message_time DESC`,
-      [currentUserId]
+          WHERE ((sender_id = $1 AND receiver_id = cu.other_user_id) 
+             OR (sender_id = cu.other_user_id AND receiver_id = $1))
+            AND school_id = $2
+          ORDER BY created_at DESC LIMIT 1) as last_message
+       FROM conversation_users cu
+       ORDER BY cu.last_message_time DESC`,
+      [currentUserId, req.tenantId]
     );
 
-    res.json({ conversations: result.rows });
+    let conversations = result.rows;
+
+    const roleResult = await pool.query(
+      "SELECT r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = $1", 
+      [currentUserId]
+    );
+    const userRole = roleResult.rows[0]?.role_name;
+
+    if (userRole === 'admin' || userRole === 'teacher' || userRole === 'super_admin') {
+      const commonGroupMsg = await pool.query(
+        "SELECT message_text, created_at FROM messages WHERE group_type = 'common_group' AND school_id = $1 ORDER BY created_at DESC LIMIT 1",
+        [req.tenantId]
+      );
+      
+      const commonGroupConv = {
+        other_user_id: 'common_group',
+        other_user_name: 'Common Group (All Teachers & Admin)',
+        other_user_image: null,
+        last_message_time: commonGroupMsg.rows.length > 0 ? commonGroupMsg.rows[0].created_at : new Date(0),
+        unread_count: 0,
+        last_message: commonGroupMsg.rows.length > 0 ? commonGroupMsg.rows[0].message_text : 'Start chatting with everyone',
+        is_group: true
+      };
+
+      conversations.unshift(commonGroupConv);
+      
+      if (userRole === 'admin' || userRole === 'super_admin') {
+        const teachers = await pool.query(
+          `SELECT u.id, u.name, u.email, u.profile_image_url 
+           FROM users u 
+           JOIN roles r ON u.role_id = r.id 
+           WHERE r.name = 'teacher' AND u.is_active = true AND u.school_id = $1`,
+          [req.tenantId]
+        );
+        
+        const existingIds = new Set(conversations.map(c => c.other_user_id));
+        for (let teacher of teachers.rows) {
+          if (!existingIds.has(teacher.id) && teacher.id !== currentUserId) {
+            conversations.push({
+              other_user_id: teacher.id,
+              other_user_name: teacher.name || teacher.email,
+              other_user_image: teacher.profile_image_url,
+              last_message_time: new Date(0),
+              unread_count: 0,
+              last_message: 'No messages yet'
+            });
+          }
+        }
+      }
+    }
+    
+    conversations.sort((a, b) => new Date(b.last_message_time) - new Date(a.last_message_time));
+
+    res.json({ conversations });
   } catch (error) {
     console.error("Get conversations error:", error);
     res.status(500).json({ error: "Failed to fetch conversations" });
@@ -392,7 +573,7 @@ export const getNotifications = async (req, res) => {
     const offset = (page - 1) * limit;
 
     // Get user ID
-    const userResult = await pool.query("SELECT id FROM users WHERE firebase_uid = $1", [uid]);
+    const userResult = await pool.query("SELECT id FROM users WHERE uid = $1", [uid]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
@@ -405,6 +586,12 @@ export const getNotifications = async (req, res) => {
     
     const queryParams = [userId];
     let paramCount = 1;
+
+    if (req.tenantId) {
+      paramCount++;
+      query += ` AND school_id = $${paramCount}`;
+      queryParams.push(req.tenantId);
+    }
 
     if (isRead !== undefined) {
       paramCount++;
@@ -437,15 +624,15 @@ export const markNotificationAsRead = async (req, res) => {
     const { uid } = req.user;
 
     // Get user ID
-    const userResult = await pool.query("SELECT id FROM users WHERE firebase_uid = $1", [uid]);
+    const userResult = await pool.query("SELECT id FROM users WHERE uid = $1", [uid]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
     const userId = userResult.rows[0].id;
 
     const result = await pool.query(
-      "UPDATE notifications SET is_read = true WHERE id = $1 AND user_id = $2 RETURNING *",
-      [id, userId]
+      "UPDATE notifications SET is_read = true WHERE id = $1 AND user_id = $2 AND school_id = $3 RETURNING *",
+      [id, userId, req.tenantId]
     );
 
     if (result.rows.length === 0) {
@@ -465,13 +652,13 @@ export const markAllNotificationsAsRead = async (req, res) => {
     const { uid } = req.user;
 
     // Get user ID
-    const userResult = await pool.query("SELECT id FROM users WHERE firebase_uid = $1", [uid]);
+    const userResult = await pool.query("SELECT id FROM users WHERE uid = $1", [uid]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
     const userId = userResult.rows[0].id;
 
-    await pool.query("UPDATE notifications SET is_read = true WHERE user_id = $1 AND is_read = false", [userId]);
+    await pool.query("UPDATE notifications SET is_read = true WHERE user_id = $1 AND is_read = false AND school_id = $2", [userId, req.tenantId]);
 
     res.json({ message: "All notifications marked as read" });
   } catch (error) {
@@ -486,15 +673,15 @@ export const getUnreadNotificationsCount = async (req, res) => {
     const { uid } = req.user;
 
     // Get user ID
-    const userResult = await pool.query("SELECT id FROM users WHERE firebase_uid = $1", [uid]);
+    const userResult = await pool.query("SELECT id FROM users WHERE uid = $1", [uid]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
     const userId = userResult.rows[0].id;
 
     const result = await pool.query(
-      "SELECT COUNT(*) as unread_count FROM notifications WHERE user_id = $1 AND is_read = false",
-      [userId]
+      "SELECT COUNT(*) as unread_count FROM notifications WHERE user_id = $1 AND is_read = false AND school_id = $2",
+      [userId, req.tenantId]
     );
 
     res.json({ unreadCount: parseInt(result.rows[0].unread_count) });

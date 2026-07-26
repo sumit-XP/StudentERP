@@ -1,4 +1,6 @@
 import pool from "../../config/db.js";
+import crypto from "crypto";
+import bcrypt from "bcrypt";
 
 // ==================== ACADEMIC YEARS ====================
 
@@ -13,12 +15,12 @@ export const createAcademicYear = async (req, res) => {
 
     // If setting as current, update all others to false
     if (isCurrent) {
-      await pool.query("UPDATE academic_years SET is_current = false");
+      await pool.query("UPDATE academic_years SET is_current = false WHERE school_id = $1", [req.tenantId]);
     }
 
     const result = await pool.query(
-      "INSERT INTO academic_years (year_name, start_date, end_date, is_current) VALUES ($1, $2, $3, $4) RETURNING *",
-      [yearName, startDate, endDate, isCurrent]
+      "INSERT INTO academic_years (year_name, start_date, end_date, is_current, school_id) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+      [yearName, startDate, endDate, isCurrent, req.tenantId]
     );
 
     res.status(201).json({
@@ -34,7 +36,7 @@ export const createAcademicYear = async (req, res) => {
 // Get All Academic Years
 export const getAcademicYears = async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM academic_years ORDER BY start_date DESC");
+    const result = await pool.query("SELECT * FROM academic_years WHERE school_id = $1 ORDER BY start_date DESC", [req.tenantId]);
     res.json({ academicYears: result.rows });
   } catch (error) {
     console.error("Get academic years error:", error);
@@ -45,7 +47,7 @@ export const getAcademicYears = async (req, res) => {
 // Get Current Academic Year
 export const getCurrentAcademicYear = async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM academic_years WHERE is_current = true");
+    const result = await pool.query("SELECT * FROM academic_years WHERE is_current = true AND school_id = $1", [req.tenantId]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "No current academic year set" });
     }
@@ -61,15 +63,15 @@ export const getCurrentAcademicYear = async (req, res) => {
 // Create Subject
 export const createSubject = async (req, res) => {
   try {
-    const { name, code, description, credits = 1 } = req.body;
+    const { name, description, classId, teacherId } = req.body;
 
-    if (!name || !code) {
-      return res.status(400).json({ error: "Subject name and code are required" });
+    if (!name || !classId) {
+      return res.status(400).json({ error: "Subject name and classId are required" });
     }
 
     const result = await pool.query(
-      "INSERT INTO subjects (name, code, description, credits) VALUES ($1, $2, $3, $4) RETURNING *",
-      [name, code, description, credits]
+      "INSERT INTO subjects (name, description, class_id, teacher_id, school_id) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+      [name, description, classId, teacherId || null, req.tenantId]
     );
 
     res.status(201).json({
@@ -89,7 +91,23 @@ export const createSubject = async (req, res) => {
 // Get All Subjects
 export const getSubjects = async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM subjects ORDER BY name");
+    const { classId } = req.query;
+    let query = `
+      SELECT s.*, u.name as teacher_name 
+      FROM subjects s 
+      LEFT JOIN users u ON s.teacher_id = u.id 
+      WHERE s.school_id = $1
+    `;
+    const params = [req.tenantId];
+    
+    if (classId) {
+      query += " AND s.class_id = $2";
+      params.push(classId);
+    }
+    
+    query += " ORDER BY s.name";
+
+    const result = await pool.query(query, params);
     res.json({ subjects: result.rows });
   } catch (error) {
     console.error("Get subjects error:", error);
@@ -101,16 +119,15 @@ export const getSubjects = async (req, res) => {
 export const updateSubject = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, code, description, credits } = req.body;
+    const { name, description, teacherId } = req.body;
 
     const result = await pool.query(
       `UPDATE subjects 
        SET name = COALESCE($1, name),
-           code = COALESCE($2, code),
-           description = COALESCE($3, description),
-           credits = COALESCE($4, credits)
-       WHERE id = $5 RETURNING *`,
-      [name, code, description, credits, id]
+           description = COALESCE($2, description),
+           teacher_id = COALESCE($3, teacher_id)
+       WHERE id = $4 AND school_id = $5 RETURNING *`,
+      [name, description, teacherId, id, req.tenantId]
     );
 
     if (result.rows.length === 0) {
@@ -139,9 +156,9 @@ export const createClass = async (req, res) => {
     }
 
     const result = await pool.query(
-      `INSERT INTO classes (name, grade_level, section, academic_year_id, class_teacher_id, max_students) 
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [name, gradeLevel, section, academicYearId, classTeacherId, maxStudents]
+      `INSERT INTO classes (name, grade_level, section, academic_year_id, class_teacher_id, max_students, school_id) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [name, gradeLevel, section, academicYearId, classTeacherId, maxStudents, req.tenantId]
     );
 
     res.status(201).json({
@@ -170,9 +187,10 @@ export const getClasses = async (req, res) => {
       LEFT JOIN students s ON c.id = s.class_id
     `;
     
-    const queryParams = [];
+    const queryParams = [req.tenantId];
+    query += " WHERE c.school_id = $1";
     if (academicYearId) {
-      query += " WHERE c.academic_year_id = $1";
+      query += " AND c.academic_year_id = $2";
       queryParams.push(academicYearId);
     }
     
@@ -200,8 +218,8 @@ export const getClassDetails = async (req, res) => {
        FROM classes c
        LEFT JOIN academic_years ay ON c.academic_year_id = ay.id
        LEFT JOIN users u ON c.class_teacher_id = u.id
-       WHERE c.id = $1`,
-      [id]
+       WHERE c.id = $1 AND c.school_id = $2`,
+      [id, req.tenantId]
     );
 
     if (classResult.rows.length === 0) {
@@ -210,13 +228,12 @@ export const getClassDetails = async (req, res) => {
 
     // Get class subjects and teachers
     const subjectsResult = await pool.query(
-      `SELECT cs.*, s.name as subject_name, s.code as subject_code,
+      `SELECT s.*, s.name as subject_name, 
               u.name as teacher_name, u.email as teacher_email
-       FROM class_subjects cs
-       JOIN subjects s ON cs.subject_id = s.id
-       LEFT JOIN users u ON cs.teacher_id = u.id
-       WHERE cs.class_id = $1`,
-      [id]
+       FROM subjects s
+       LEFT JOIN users u ON s.teacher_id = u.id
+       WHERE s.class_id = $1 AND s.school_id = $2`,
+      [id, req.tenantId]
     );
 
     // Get students in class
@@ -224,9 +241,9 @@ export const getClassDetails = async (req, res) => {
       `SELECT s.*, u.name, u.email, u.phone
        FROM students s
        JOIN users u ON s.user_id = u.id
-       WHERE s.class_id = $1
+       WHERE s.class_id = $1 AND s.school_id = $2
        ORDER BY s.roll_number`,
-      [id]
+      [id, req.tenantId]
     );
 
     res.json({
@@ -240,31 +257,35 @@ export const getClassDetails = async (req, res) => {
   }
 };
 
-// Assign Subject to Class
-export const assignSubjectToClass = async (req, res) => {
+// Update Class
+export const updateClass = async (req, res) => {
   try {
-    const { classId, subjectId, teacherId } = req.body;
-
-    if (!classId || !subjectId) {
-      return res.status(400).json({ error: "Class ID and Subject ID are required" });
-    }
+    const { id } = req.params;
+    const { name, gradeLevel, section, academicYearId, classTeacherId, maxStudents } = req.body;
 
     const result = await pool.query(
-      "INSERT INTO class_subjects (class_id, subject_id, teacher_id) VALUES ($1, $2, $3) RETURNING *",
-      [classId, subjectId, teacherId]
+      `UPDATE classes 
+       SET name = COALESCE($1, name),
+           grade_level = COALESCE($2, grade_level),
+           section = COALESCE($3, section),
+           academic_year_id = COALESCE($4, academic_year_id),
+           class_teacher_id = $5,
+           max_students = COALESCE($6, max_students)
+       WHERE id = $7 AND school_id = $8 RETURNING *`,
+      [name, gradeLevel, section, academicYearId, classTeacherId, maxStudents, id, req.tenantId]
     );
 
-    res.status(201).json({
-      message: "Subject assigned to class successfully",
-      assignment: result.rows[0]
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Class not found" });
+    }
+
+    res.json({
+      message: "Class updated successfully",
+      class: result.rows[0]
     });
   } catch (error) {
-    console.error("Assign subject error:", error);
-    if (error.code === '23505') { // Unique constraint violation
-      res.status(400).json({ error: "Subject already assigned to this class" });
-    } else {
-      res.status(500).json({ error: "Failed to assign subject to class" });
-    }
+    console.error("Update class error:", error);
+    res.status(500).json({ error: "Failed to update class" });
   }
 };
 
@@ -289,9 +310,9 @@ export const createStudent = async (req, res) => {
     }
 
     const result = await pool.query(
-      `INSERT INTO students (user_id, student_id, class_id, admission_date, roll_number, parent_id, emergency_contact, blood_group) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [userId, studentId, classId, admissionDate, rollNumber, parentId, emergencyContact, bloodGroup]
+      `INSERT INTO students (user_id, student_id, class_id, admission_date, roll_number, parent_id, emergency_contact, blood_group, school_id) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [userId, studentId, classId, admissionDate, rollNumber, parentId, emergencyContact, bloodGroup, req.tenantId]
     );
 
     res.status(201).json({
@@ -322,11 +343,11 @@ export const getStudents = async (req, res) => {
       JOIN users u ON s.user_id = u.id
       LEFT JOIN classes c ON s.class_id = c.id
       LEFT JOIN users p ON s.parent_id = p.id
-      WHERE 1=1
+      WHERE s.school_id = $1
     `;
     
-    const queryParams = [];
-    let paramCount = 0;
+    const queryParams = [req.tenantId];
+    let paramCount = 1;
 
     if (classId) {
       paramCount++;
@@ -349,10 +370,10 @@ export const getStudents = async (req, res) => {
     let countQuery = `
       SELECT COUNT(*) FROM students s
       JOIN users u ON s.user_id = u.id
-      WHERE 1=1
+      WHERE s.school_id = $1
     `;
-    const countParams = [];
-    let countParamCount = 0;
+    const countParams = [req.tenantId];
+    let countParamCount = 1;
 
     if (classId) {
       countParamCount++;
@@ -404,9 +425,9 @@ export const createTeacher = async (req, res) => {
     }
 
     const result = await pool.query(
-      `INSERT INTO teachers (user_id, employee_id, qualification, experience_years, joining_date, salary, department) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [userId, employeeId, qualification, experienceYears, joiningDate, salary, department]
+      `INSERT INTO teachers (user_id, employee_id, qualification, experience_years, joining_date, salary, department, school_id) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [userId, employeeId, qualification, experienceYears, joiningDate, salary, department, req.tenantId]
     );
 
     res.status(201).json({
@@ -433,11 +454,11 @@ export const getTeachers = async (req, res) => {
       SELECT t.*, u.name, u.email, u.phone, u.address
       FROM teachers t
       JOIN users u ON t.user_id = u.id
-      WHERE 1=1
+      WHERE t.school_id = $1
     `;
     
-    const queryParams = [];
-    let paramCount = 0;
+    const queryParams = [req.tenantId];
+    let paramCount = 1;
 
     if (department) {
       paramCount++;
@@ -460,10 +481,10 @@ export const getTeachers = async (req, res) => {
     let countQuery = `
       SELECT COUNT(*) FROM teachers t
       JOIN users u ON t.user_id = u.id
-      WHERE 1=1
+      WHERE t.school_id = $1
     `;
-    const countParams = [];
-    let countParamCount = 0;
+    const countParams = [req.tenantId];
+    let countParamCount = 1;
 
     if (department) {
       countParamCount++;
@@ -717,4 +738,216 @@ export const bulkPromoteStudents = async (req, res) => {
     console.error("Bulk promote students error:", error);
     res.status(500).json({ error: "Failed to bulk update class" });
   } finally { client.release(); }
+};
+
+// Batch Create Students
+export const batchCreateStudents = async (req, res) => {
+  const { classId, students } = req.body;
+  if (!classId || !students || !Array.isArray(students)) {
+    return res.status(400).json({ error: "classId and students array are required" });
+  }
+
+  const client = await pool.connect();
+  let successCount = 0;
+  let fails = [];
+
+  try {
+    const roleQuery = await client.query("SELECT id FROM roles WHERE name = $1", ['student']);
+    if (roleQuery.rows.length === 0) {
+      return res.status(500).json({ error: "Student role not found in DB" });
+    }
+    const roleId = roleQuery.rows[0].id;
+    
+    // Sort students alphabetically for roll number assignment
+    const sortedStudents = [...students].sort((a, b) => a.name.localeCompare(b.name));
+
+    for (const student of sortedStudents) {
+      try {
+        await client.query("BEGIN");
+
+        const existingUser = await client.query("SELECT id FROM users WHERE email = $1", [student.email]);
+        if (existingUser.rows.length > 0) {
+          throw new Error("User with this email already registered");
+        }
+
+        const uid = crypto.randomUUID();
+        const passwordHash = await bcrypt.hash(student.password || 'Welcome@123', 10);
+
+        const userResult = await client.query(
+          `INSERT INTO users (uid, password_hash, email, name, role_id, school_id, phone) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING id`,
+          [uid, passwordHash, student.email, student.name, roleId, req.tenantId, student.phone || null]
+        );
+        const userId = userResult.rows[0].id;
+
+        // Try to insert student record
+        // Handle roll number if provided, else null (client logic handled it or we can auto-increment)
+        // Wait, the client already passes the `rollNumber` and `studentId` in `batchCreateStudents` payload.
+        await client.query(
+          `INSERT INTO students (user_id, student_id, class_id, admission_date, roll_number, school_id) 
+           VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+          [
+             userId, 
+             student.studentId, 
+             classId, 
+             student.admissionDate || new Date().toISOString().slice(0, 10), 
+             student.rollNumber || null,
+             req.tenantId
+          ]
+        );
+
+        await client.query("COMMIT");
+        successCount++;
+      } catch (err) {
+        await client.query("ROLLBACK");
+        // Retry logic for duplicate student ID could be added here, but client provides studentId.
+        // It's safer to just record the failure and let the client know.
+        let reason = err.message;
+        if (err.code === '23505') { // Unique constraint violation
+          if (err.constraint && err.constraint.includes('student_id')) {
+             reason = "Student ID already exists";
+          } else if (err.constraint && err.constraint.includes('roll_number')) {
+             reason = "Roll Number already exists in class";
+          } else {
+             reason = "Duplicate record error: " + err.constraint;
+          }
+        }
+        fails.push({ email: student.email, reason });
+      }
+    }
+
+    res.json({ success: successCount, fails });
+  } catch (error) {
+    console.error("Batch create students error:", error);
+    res.status(500).json({ error: "Failed to process batch creation", details: error.message });
+  } finally {
+    client.release();
+  }
+};
+
+// ==========================================
+// GRADES & REPORTS
+// ==========================================
+
+export const getStudentGrades = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+
+    // Verify student belongs to this tenant
+    const studentCheck = await pool.query(
+      `SELECT s.id, u.name as full_name, c.name as class_name, c.section as class_section 
+       FROM students s
+       JOIN users u ON s.user_id = u.id
+       LEFT JOIN classes c ON s.class_id = c.id
+       WHERE s.id = $1 AND s.school_id = $2`,
+      [studentId, req.tenantId]
+    );
+
+    if (studentCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Student not found" });
+    }
+
+    const student = studentCheck.rows[0];
+
+    // Fetch grades with subject details
+    const gradesResult = await pool.query(
+      `SELECT g.*, sub.name as subject_name, sub.code as subject_code
+       FROM grades g
+       JOIN subjects sub ON g.subject_id = sub.id
+       WHERE g.student_id = $1
+       ORDER BY sub.name ASC`,
+      [studentId]
+    );
+
+    res.json({
+      student: {
+        id: student.id,
+        name: student.full_name,
+        class_name: student.class_name,
+        class_section: student.class_section
+      },
+      grades: gradesResult.rows
+    });
+  } catch (err) {
+    console.error("Error in getStudentGrades:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+export const getClassGrades = async (req, res) => {
+  try {
+    const { classId, subjectId } = req.params;
+    const { examType } = req.query;
+
+    if (!examType) {
+      return res.status(400).json({ error: "examType is required" });
+    }
+
+    const result = await pool.query(
+      `SELECT g.id as grade_id, g.marks_obtained, g.max_marks, g.grade_letter, 
+              s.id as student_id, u.name as student_name, s.roll_number
+       FROM students s
+       JOIN users u ON s.user_id = u.id
+       LEFT JOIN grades g ON s.id = g.student_id AND g.subject_id = $1 AND g.exam_type = $2
+       WHERE s.class_id = $3 AND s.school_id = $4
+       ORDER BY s.roll_number ASC, u.name ASC`,
+      [subjectId, examType, classId, req.tenantId]
+    );
+
+    res.json({ grades: result.rows });
+  } catch (err) {
+    console.error("Error in getClassGrades:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+export const saveClassGrades = async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { classId, subjectId } = req.params;
+    const { examType, grades } = req.body; // grades = [{ studentId, marksObtained, maxMarks, gradeLetter }, ...]
+
+    if (!examType || !grades || !Array.isArray(grades)) {
+      return res.status(400).json({ error: "examType and grades array are required" });
+    }
+
+    await client.query("BEGIN");
+
+    for (const g of grades) {
+      const { studentId, marksObtained, maxMarks, gradeLetter } = g;
+      
+      const parsedMarksObtained = marksObtained === '' ? null : marksObtained;
+
+      // Upsert grade
+      const existing = await client.query(
+        `SELECT id FROM grades WHERE student_id = $1 AND subject_id = $2 AND exam_type = $3`,
+        [studentId, subjectId, examType]
+      );
+
+      if (existing.rows.length > 0) {
+        await client.query(
+          `UPDATE grades 
+           SET marks_obtained = $1, max_marks = $2, grade_letter = $3, entered_by = $4, exam_date = CURRENT_DATE
+           WHERE id = $5`,
+          [parsedMarksObtained, maxMarks || 100, gradeLetter, req.user.id, existing.rows[0].id]
+        );
+      } else {
+        await client.query(
+          `INSERT INTO grades (student_id, subject_id, class_id, exam_type, marks_obtained, max_marks, grade_letter, entered_by, exam_date)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_DATE)`,
+          [studentId, subjectId, classId, examType, parsedMarksObtained, maxMarks || 100, gradeLetter, req.user.id]
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+    res.json({ message: "Grades saved successfully" });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error in saveClassGrades:", err);
+    res.status(500).json({ error: "Server error" });
+  } finally {
+    client.release();
+  }
 };

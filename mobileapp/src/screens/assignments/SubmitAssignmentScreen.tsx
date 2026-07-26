@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRoute, RouteProp } from '@react-navigation/native';
-import apiClient from '../../api/client';
+import assignmentService from '../../services/assignmentService';
 import { AssignmentsStackParamList } from '../../navigation/features/AssignmentsNavigator';
 
 type RoutePropType = RouteProp<AssignmentsStackParamList, 'SubmitAssignment'>;
@@ -23,7 +23,7 @@ const SubmitAssignmentScreen: React.FC = () => {
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
-      await apiClient.post('/assignments/submit', { assignmentId, notes });
+      await assignmentService.submitAssignment(assignmentId, notes);
       Alert.alert('Success', 'Assignment submitted successfully!');
       setNotes('');
     } catch (e: unknown) {

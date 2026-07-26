@@ -189,6 +189,7 @@ export default function Students() {
             </form>
           </div>
 
+          {/* Documents Section (Temporarily Redundant)
           <div>
             <div className="font-semibold mb-2">Documents</div>
             <ul className="text-sm list-disc ml-5 mb-2">
@@ -210,6 +211,7 @@ export default function Students() {
             </div>
             <FileUpload label="Add Document" field="resourceFile" onUploaded={onDocUploaded} uploadFn={uploadFn} />
           </div>
+          */}
 
           <div>
             <div className="font-semibold mb-2">Promotion/Demotion</div>
@@ -776,7 +778,7 @@ export default function Students() {
               </div>
             </div>
 
-            {/* Documents Section */}
+            {/* Documents Section (Temporarily Redundant)
             <div>
               <div className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-200">📄 Document Uploads (Optional)</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -818,6 +820,7 @@ export default function Students() {
                 </div>
               </div>
             </div>
+            */}
 
             {/* Login Details Section */}
             <div>
@@ -842,7 +845,6 @@ export default function Students() {
                   <li>Fields marked * are mandatory</li>
                   <li>Student ID format: First 3 letters of name + First 2 letters of guardian name + Birth year</li>
                   <li>Roll number will be assigned automatically based on class enrollment</li>
-                  <li>Documents can be uploaded now or later from the student details panel</li>
                 </ul>
               </div>
               <button className="btn btn-primary w-full" disabled={createLoading || uploadingFiles}>

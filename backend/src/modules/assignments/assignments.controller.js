@@ -22,7 +22,7 @@ export const createAssignment = async (req, res) => {
     }
 
     // Get teacher ID
-    const userResult = await pool.query("SELECT id FROM users WHERE firebase_uid = $1", [uid]);
+    const userResult = await pool.query("SELECT id FROM users WHERE uid = $1", [uid]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
@@ -249,7 +249,7 @@ export const submitAssignment = async (req, res) => {
 
     // Get student ID
     const studentResult = await pool.query(
-      "SELECT s.id FROM students s JOIN users u ON s.user_id = u.id WHERE u.firebase_uid = $1",
+      "SELECT s.id FROM students s JOIN users u ON s.user_id = u.id WHERE u.uid = $1",
       [uid]
     );
 
@@ -329,7 +329,7 @@ export const gradeSubmission = async (req, res) => {
     }
 
     // Get grader ID
-    const userResult = await pool.query("SELECT id FROM users WHERE firebase_uid = $1", [uid]);
+    const userResult = await pool.query("SELECT id FROM users WHERE uid = $1", [uid]);
     const gradedBy = userResult.rows[0].id;
 
     const result = await pool.query(
@@ -360,20 +360,31 @@ export const gradeSubmission = async (req, res) => {
 // Get My Assignments (for students)
 export const getMyAssignments = async (req, res) => {
   try {
-    const { uid } = req.user;
+    const { uid, role } = req.user;
     const { status, page = 1, limit = 10 } = req.query;
     const offset = (page - 1) * limit;
 
-    // Get student info
-    const studentResult = await pool.query(
-      `SELECT s.id, s.class_id FROM students s 
-       JOIN users u ON s.user_id = u.id 
-       WHERE u.firebase_uid = $1`,
-      [uid]
-    );
+    // Get student info — handle both student and parent roles
+    let studentResult;
+    if (role === "parent") {
+      studentResult = await pool.query(
+        `SELECT s.id, s.class_id FROM students s
+         JOIN users u ON u.uid = $1
+         WHERE s.parent_id = u.id
+         LIMIT 1`,
+        [uid]
+      );
+    } else {
+      studentResult = await pool.query(
+        `SELECT s.id, s.class_id FROM students s 
+         JOIN users u ON s.user_id = u.id 
+         WHERE u.uid = $1`,
+        [uid]
+      );
+    }
 
     if (studentResult.rows.length === 0) {
-      return res.status(404).json({ error: "Student record not found" });
+      return res.json({ assignments: [] });
     }
 
     const { id: studentId, class_id: classId } = studentResult.rows[0];
@@ -444,7 +455,7 @@ export const uploadLearningResource = async (req, res) => {
     }
 
     // Get uploader ID
-    const userResult = await pool.query("SELECT id FROM users WHERE firebase_uid = $1", [uid]);
+    const userResult = await pool.query("SELECT id FROM users WHERE uid = $1", [uid]);
     const uploadedBy = userResult.rows[0].id;
 
     const result = await pool.query(
@@ -472,7 +483,7 @@ export const getLearningResources = async (req, res) => {
 
     // Get user info to check access rights
     const userResult = await pool.query(
-      "SELECT id, role_id FROM users u JOIN roles r ON u.role_id = r.id WHERE u.firebase_uid = $1",
+      "SELECT id, role_id FROM users u JOIN roles r ON u.role_id = r.id WHERE u.uid = $1",
       [uid]
     );
     const user = userResult.rows[0];
@@ -494,7 +505,7 @@ export const getLearningResources = async (req, res) => {
 
     // Access control: students can only see public resources or resources for their class
     const studentResult = await pool.query(
-      "SELECT class_id FROM students s JOIN users u ON s.user_id = u.id WHERE u.firebase_uid = $1",
+      "SELECT class_id FROM students s JOIN users u ON s.user_id = u.id WHERE u.uid = $1",
       [uid]
     );
 

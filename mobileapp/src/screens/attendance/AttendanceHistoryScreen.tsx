@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
-import apiClient from '../../api/client';
+import attendanceService from '../../services/attendanceService';
 
 interface AttendanceRecord {
   id: string;
@@ -21,11 +21,10 @@ const AttendanceHistoryScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiClient
-      .get('/attendance/my-attendance')
-      .then((res) => {
-        const data = res.data as { data?: AttendanceRecord[] } | AttendanceRecord[];
-        setRecords(Array.isArray(data) ? data : (data as { data?: AttendanceRecord[] }).data ?? []);
+    attendanceService
+      .getMyAttendance()
+      .then((data) => {
+        setRecords(Array.isArray(data) ? data : data ?? []);
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));

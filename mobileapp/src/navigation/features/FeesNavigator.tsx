@@ -15,7 +15,7 @@ export type FeesStackParamList = {
 const Stack = createStackNavigator<FeesStackParamList>();
 
 const FeesNavigator: React.FC = () => (
-  <Stack.Navigator>
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen
       name="InvoiceList"
       component={InvoiceListScreen}

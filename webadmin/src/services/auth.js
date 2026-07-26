@@ -1,14 +1,7 @@
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth'
-import { auth } from '../config/firebase'
 import api from './api'
 
 export async function login(email, password) {
-  // 1) Firebase login
-  const cred = await signInWithEmailAndPassword(auth, email, password)
-  const idToken = await cred.user.getIdToken()
-
-  // 2) Backend login -> get JWT
-  const { data } = await api.post('/auth/login', { idToken })
+  const { data } = await api.post('/auth/login', { email, password })
   const jwt = data.token
 
   localStorage.setItem('erp_jwt', jwt)
@@ -18,8 +11,13 @@ export async function login(email, password) {
 }
 
 export function getUser() {
-  const raw = localStorage.getItem('erp_user')
-  return raw ? JSON.parse(raw) : null
+  try {
+    const raw = localStorage.getItem('erp_user')
+    if (!raw || raw === 'undefined') return null
+    return JSON.parse(raw)
+  } catch (e) {
+    return null
+  }
 }
 
 export function getRole() {
@@ -28,13 +26,13 @@ export function getRole() {
 
 export async function logout() {
   try { await api.post('/auth/logout') } catch {}
-  await signOut(auth)
   localStorage.removeItem('erp_jwt')
   localStorage.removeItem('erp_user')
 }
 
-export function registerUser(payload) {
-  return api.post('/auth/register', payload)
+export async function registerUser(payload) {
+  const { data } = await api.post('/auth/register', payload)
+  return data
 }
 
 export function listUsers(params) {

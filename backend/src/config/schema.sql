@@ -4,6 +4,8 @@
 -- Create database (run this separately if needed)
 -- CREATE DATABASE student_erp;
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Roles table
 CREATE TABLE IF NOT EXISTS roles (
     id SERIAL PRIMARY KEY,
@@ -17,13 +19,39 @@ INSERT INTO roles (name, description) VALUES
 ('admin', 'System Administrator'),
 ('teacher', 'Teaching Staff'),
 ('student', 'Student'),
-('parent', 'Parent/Guardian')
+('parent', 'Parent/Guardian'),
+('super_admin', 'Platform Super Administrator')
 ON CONFLICT (name) DO NOTHING;
+
+-- Schools / tenant table
+CREATE TABLE IF NOT EXISTS schools (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    school_code CHAR(5) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    subdomain VARCHAR(100) UNIQUE,
+    address TEXT,
+    place VARCHAR(255),
+    owner_name VARCHAR(255),
+    tenure VARCHAR(100),
+    renewal_date DATE,
+    services_taken JSONB DEFAULT '[]',
+    contact_email VARCHAR(255),
+    contact_phone VARCHAR(50),
+    logo_url TEXT,
+    plan VARCHAR(50) DEFAULT 'basic',
+    is_active BOOLEAN DEFAULT true,
+    max_students INTEGER DEFAULT 500,
+    max_teachers INTEGER DEFAULT 50,
+    settings JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
-    firebase_uid VARCHAR(255) UNIQUE NOT NULL,
+    uid VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255),
     email VARCHAR(255) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
     phone VARCHAR(20),
@@ -32,6 +60,7 @@ CREATE TABLE IF NOT EXISTS users (
     gender VARCHAR(10),
     profile_image_url TEXT,
     role_id INTEGER REFERENCES roles(id),
+    school_id UUID REFERENCES schools(id) ON DELETE CASCADE,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -63,20 +92,10 @@ CREATE TABLE IF NOT EXISTS classes (
 CREATE TABLE IF NOT EXISTS subjects (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
-    code VARCHAR(20) UNIQUE NOT NULL,
     description TEXT,
-    credits INTEGER DEFAULT 1,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Class Subjects (Many-to-Many relationship)
-CREATE TABLE IF NOT EXISTS class_subjects (
-    id SERIAL PRIMARY KEY,
     class_id INTEGER REFERENCES classes(id) ON DELETE CASCADE,
-    subject_id INTEGER REFERENCES subjects(id) ON DELETE CASCADE,
-    teacher_id INTEGER REFERENCES users(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(class_id, subject_id)
+    teacher_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Students table (extends users for student-specific data)
@@ -344,46 +363,6 @@ CREATE TABLE IF NOT EXISTS parent_feedback (
     resolved_at TIMESTAMP
 );
 
--- ==================== Constraints & Indexes (Post-creation) ====================
-
--- Add FK for fee_payments.invoice_id after fee_invoices exists (ignore if present)
-DO $$ BEGIN
-  ALTER TABLE fee_payments
-    ADD CONSTRAINT fk_fee_payments_invoice
-    FOREIGN KEY (invoice_id) REFERENCES fee_invoices(id) ON DELETE SET NULL;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
--- Helpful indexes for new tables
-CREATE INDEX IF NOT EXISTS idx_student_guardians_student_id ON student_guardians(student_id);
-CREATE INDEX IF NOT EXISTS idx_student_documents_student_id ON student_documents(student_id);
-CREATE INDEX IF NOT EXISTS idx_student_promotions_student_id ON student_promotions(student_id);
-CREATE INDEX IF NOT EXISTS idx_fee_invoices_student_id ON fee_invoices(student_id);
-CREATE INDEX IF NOT EXISTS idx_fee_invoice_items_invoice_id ON fee_invoice_items(invoice_id);
-CREATE INDEX IF NOT EXISTS idx_fee_payments_invoice_id ON fee_payments(invoice_id);
-CREATE INDEX IF NOT EXISTS idx_razorpay_orders_invoice_id ON razorpay_orders(invoice_id);
-CREATE INDEX IF NOT EXISTS idx_ptm_student_id ON parent_teacher_meetings(student_id);
-CREATE INDEX IF NOT EXISTS idx_ptm_class_id ON parent_teacher_meetings(class_id);
-CREATE INDEX IF NOT EXISTS idx_parent_feedback_student_id ON parent_feedback(student_id);
-CREATE INDEX IF NOT EXISTS idx_parent_feedback_parent_id ON parent_feedback(parent_id);
-
-CREATE INDEX IF NOT EXISTS idx_attendance_student_id ON attendance(student_id);
-CREATE INDEX IF NOT EXISTS idx_messages_sender_receiver ON messages(sender_id, receiver_id);
-CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
-CREATE INDEX IF NOT EXISTS idx_grades_student_id ON grades(student_id);
-
--- Create updated_at trigger function
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$$ language 'plpgsql';
-
--- Create trigger for users table
-CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
 -- ==================== EXTENSIONS FOR STUDENT MANAGEMENT ====================
 
 -- Student Guardians (multiple contacts)
@@ -403,6 +382,26 @@ CREATE TABLE IF NOT EXISTS student_documents (
     id SERIAL PRIMARY KEY,
     student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
     doc_type VARCHAR(50), -- birth_cert, id_proof, photo, other
+    file_url TEXT NOT NULL,
+    notes TEXT,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Teacher Documents (digital storage)
+CREATE TABLE IF NOT EXISTS teacher_documents (
+    id SERIAL PRIMARY KEY,
+    teacher_id INTEGER REFERENCES teachers(id) ON DELETE CASCADE,
+    doc_type VARCHAR(50), -- id_proof, qualification_cert, experience_cert, photo, other
+    file_url TEXT NOT NULL,
+    notes TEXT,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Parent Documents (digital storage)
+CREATE TABLE IF NOT EXISTS parent_documents (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    doc_type VARCHAR(50), -- id_proof, photo, other
     file_url TEXT NOT NULL,
     notes TEXT,
     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -489,3 +488,117 @@ CREATE TABLE IF NOT EXISTS parent_feedback (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     resolved_at TIMESTAMP
 );
+
+-- ==================== HR & PAYROLL MANAGEMENT (DEMO) ====================
+
+-- Non-Teaching Staff
+CREATE TABLE IF NOT EXISTS staff (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    employee_id VARCHAR(20) UNIQUE NOT NULL,
+    designation VARCHAR(100), -- Driver, Clerk, Admin, etc.
+    department VARCHAR(100),
+    joining_date DATE,
+    salary DECIMAL(10,2),
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Leave Applications
+CREATE TABLE IF NOT EXISTS leave_applications (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE, -- Can be teacher or staff
+    leave_type VARCHAR(50) NOT NULL, -- casual, medical, earned, unpaid
+    from_date DATE NOT NULL,
+    to_date DATE NOT NULL,
+    reason TEXT,
+    status VARCHAR(20) DEFAULT 'pending', -- pending, approved, rejected
+    approved_by INTEGER REFERENCES users(id),
+    approved_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Payroll Records (Demo - simplified)
+CREATE TABLE IF NOT EXISTS payroll_records (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE, -- Teacher or Staff
+    month INTEGER NOT NULL, -- 1-12
+    year INTEGER NOT NULL,
+    basic_salary DECIMAL(10,2) NOT NULL,
+    deductions DECIMAL(10,2) DEFAULT 0,
+    net_salary DECIMAL(10,2) NOT NULL,
+    status VARCHAR(20) DEFAULT 'generated', -- generated, paid
+    payment_date DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, month, year)
+);
+
+-- Indexes for HR & Payroll
+CREATE INDEX IF NOT EXISTS idx_staff_user_id ON staff(user_id);
+CREATE INDEX IF NOT EXISTS idx_leave_applications_user_id ON leave_applications(user_id);
+CREATE INDEX IF NOT EXISTS idx_payroll_records_user_id ON payroll_records(user_id);
+CREATE INDEX IF NOT EXISTS idx_payroll_records_period ON payroll_records(year, month);
+
+-- ==================== Constraints & Indexes (Post-creation) ====================
+
+-- Add FK for fee_payments.invoice_id after fee_invoices exists (ignore if present)
+DO $$ BEGIN
+  ALTER TABLE fee_payments
+    ADD CONSTRAINT fk_fee_payments_invoice
+    FOREIGN KEY (invoice_id) REFERENCES fee_invoices(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- Helpful indexes for new tables
+CREATE INDEX IF NOT EXISTS idx_student_guardians_student_id ON student_guardians(student_id);
+CREATE INDEX IF NOT EXISTS idx_student_documents_student_id ON student_documents(student_id);
+CREATE INDEX IF NOT EXISTS idx_teacher_documents_teacher_id ON teacher_documents(teacher_id);
+CREATE INDEX IF NOT EXISTS idx_parent_documents_user_id ON parent_documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_student_promotions_student_id ON student_promotions(student_id);
+CREATE INDEX IF NOT EXISTS idx_fee_invoices_student_id ON fee_invoices(student_id);
+CREATE INDEX IF NOT EXISTS idx_fee_invoice_items_invoice_id ON fee_invoice_items(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_fee_payments_invoice_id ON fee_payments(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_razorpay_orders_invoice_id ON razorpay_orders(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_ptm_student_id ON parent_teacher_meetings(student_id);
+CREATE INDEX IF NOT EXISTS idx_ptm_class_id ON parent_teacher_meetings(class_id);
+CREATE INDEX IF NOT EXISTS idx_parent_feedback_student_id ON parent_feedback(student_id);
+CREATE INDEX IF NOT EXISTS idx_parent_feedback_parent_id ON parent_feedback(parent_id);
+
+CREATE INDEX IF NOT EXISTS idx_attendance_student_id ON attendance(student_id);
+CREATE INDEX IF NOT EXISTS idx_messages_sender_receiver ON messages(sender_id, receiver_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_grades_student_id ON grades(student_id);
+
+-- Create updated_at trigger function
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Create trigger for users table
+CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+
+-- Multi-tenancy columns
+ALTER TABLE academic_years ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE classes ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE subjects ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE timetable ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE assignments ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE assignment_submissions ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE learning_resources ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE fee_structure ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE fee_invoices ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE fee_invoice_items ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE razorpay_orders ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE fee_refunds ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE security_deposits ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE CASCADE;

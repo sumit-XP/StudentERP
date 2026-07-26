@@ -12,7 +12,7 @@ if (!fs.existsSync(uploadsDir)) {
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     let uploadPath = 'uploads/';
-    
+
     // Create subdirectories based on file type
     if (file.fieldname === 'profileImage') {
       uploadPath += 'profiles/';
@@ -22,15 +22,17 @@ const storage = multer.diskStorage({
       uploadPath += 'submissions/';
     } else if (file.fieldname === 'resourceFile') {
       uploadPath += 'resources/';
+    } else if (file.fieldname === 'documentFile') {
+      uploadPath += 'documents/';
     } else {
       uploadPath += 'general/';
     }
-    
+
     // Create directory if it doesn't exist
     if (!fs.existsSync(uploadPath)) {
       fs.mkdirSync(uploadPath, { recursive: true });
     }
-    
+
     cb(null, uploadPath);
   },
   filename: function (req, file, cb) {
@@ -50,15 +52,16 @@ const fileFilter = (req, file, cb) => {
     assignmentFile: /pdf|doc|docx|txt|jpeg|jpg|png/,
     submissionFile: /pdf|doc|docx|txt|jpeg|jpg|png/,
     resourceFile: /pdf|doc|docx|txt|jpeg|jpg|png|mp4|avi|mov/,
+    documentFile: /pdf|doc|docx|jpeg|jpg|png/,
     general: /jpeg|jpg|png|gif|pdf|doc|docx|txt/
   };
 
   const fieldType = file.fieldname || 'general';
   const allowedPattern = allowedTypes[fieldType] || allowedTypes.general;
-  
+
   // Check file extension
   const extname = allowedPattern.test(path.extname(file.originalname).toLowerCase());
-  
+
   // Check mime type
   const mimetype = allowedPattern.test(file.mimetype);
 
@@ -83,6 +86,7 @@ export const uploadProfileImage = upload.single('profileImage');
 export const uploadAssignmentFile = upload.single('assignmentFile');
 export const uploadSubmissionFile = upload.single('submissionFile');
 export const uploadResourceFile = upload.single('resourceFile');
+export const uploadDocumentFile = upload.single('documentFile'); // For ID proofs, certificates
 export const uploadMultipleFiles = upload.array('files', 5); // Max 5 files
 
 // Error handling middleware for multer
@@ -98,11 +102,11 @@ export const handleUploadError = (error, req, res, next) => {
       return res.status(400).json({ error: 'Unexpected field name for file upload.' });
     }
   }
-  
+
   if (error.message.includes('Invalid file type')) {
     return res.status(400).json({ error: error.message });
   }
-  
+
   next(error);
 };
 

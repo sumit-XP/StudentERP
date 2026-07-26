@@ -13,6 +13,16 @@ import communicationRoutes from "./routes/communication.routes.js";
 import analyticsRoutes from "./routes/analytics.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
 import feesRoutes from "./routes/fees.routes.js";
+import documentsRoutes from "./routes/documents.routes.js";
+import parentTeacherRoutes from "./routes/parent-teacher.routes.js";
+import hrRoutes from "./routes/hr.routes.js";
+import payrollRoutes from "./routes/payroll.routes.js";
+import superAdminRoutes from "./routes/super-admin.routes.js";
+import leavesRoutes from "./routes/leaves.routes.js";
+import financeRoutes from "./routes/finance.routes.js";
+
+import { initCronJobs } from "./utils/cron-jobs.js";
+import { ensureSuperAdmin } from "./utils/bootstrap-super-admin.js";
 
 // ES6 module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -38,10 +48,18 @@ app.use("/api/communication", communicationRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/fees", feesRoutes);
+app.use("/api/documents", documentsRoutes);
+app.use("/api/parent-teacher", parentTeacherRoutes);
+app.use("/api/hr", hrRoutes);
+app.use("/api/leaves", leavesRoutes);
+app.use("/api/finance", financeRoutes);
+app.use("/api/payroll", payrollRoutes);
+app.use("/api/super-admin", superAdminRoutes);      // Super-admin: tenant management
+app.use("/api/public/schools", superAdminRoutes);   // Public: school registration & subdomain lookup
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
-  res.json({ 
+  res.json({
     status: "ERP Backend Running ✅",
     timestamp: new Date().toISOString(),
     version: "1.0.0"
@@ -56,11 +74,16 @@ app.get("/api", (req, res) => {
     endpoints: {
       auth: "/api/auth",
       academic: "/api/academic",
-      attendance: "/api/attendance", 
+      attendance: "/api/attendance",
       assignments: "/api/assignments",
       communication: "/api/communication",
       analytics: "/api/analytics",
       upload: "/api/upload",
+      documents: "/api/documents",
+      fees: "/api/fees",
+      parentTeacher: "/api/parent-teacher",
+      hr: "/api/hr",
+      payroll: "/api/payroll",
       health: "/api/health"
     },
     documentation: "See README.md for detailed API documentation"
@@ -70,7 +93,7 @@ app.get("/api", (req, res) => {
 // Error handling middleware
 app.use((error, req, res, next) => {
   console.error("Unhandled error:", error);
-  res.status(500).json({ 
+  res.status(500).json({
     error: "Internal server error",
     message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
   });
@@ -78,7 +101,7 @@ app.use((error, req, res, next) => {
 
 // 404 handler
 app.use((req, res) => {
-  res.status(404).json({ 
+  res.status(404).json({
     error: "Endpoint not found",
     message: `${req.method} ${req.path} is not a valid endpoint`
   });
@@ -86,8 +109,13 @@ app.use((req, res) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📚 School ERP API available at http://localhost:${PORT}/api`);
   console.log(`💚 Health check: http://localhost:${PORT}/api/health`);
+  
+  ensureSuperAdmin();
+
+  // Initialize cron jobs for notifications
+  initCronJobs();
 });

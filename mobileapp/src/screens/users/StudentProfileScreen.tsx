@@ -10,7 +10,7 @@ import {
   Linking,
 } from 'react-native';
 import { useRoute, RouteProp } from '@react-navigation/native';
-import apiClient from '../../api/client';
+import academicService from '../../services/academicService';
 import { Guardian, StudentDocument } from '../../types/users';
 import { UsersStackParamList } from '../../navigation/features/UsersNavigator';
 
@@ -25,16 +25,12 @@ const StudentProfileScreen: React.FC = () => {
 
   useEffect(() => {
     Promise.all([
-      apiClient.get(`/academic/students/${studentId}/guardians`),
-      apiClient.get(`/academic/students/${studentId}/documents`),
+      academicService.getStudentGuardians(studentId),
+      academicService.getStudentDocuments(studentId),
     ])
-      .then(([guardRes, docRes]) => {
-        const gData = guardRes.data as { data?: Guardian[] } | Guardian[];
-        setGuardians(Array.isArray(gData) ? gData : (gData as { data?: Guardian[] }).data ?? []);
-        const dData = docRes.data as { data?: StudentDocument[] } | StudentDocument[];
-        setDocuments(
-          Array.isArray(dData) ? dData : (dData as { data?: StudentDocument[] }).data ?? [],
-        );
+      .then(([gData, dData]) => {
+        setGuardians(Array.isArray(gData) ? gData : gData ?? []);
+        setDocuments(Array.isArray(dData) ? dData : dData ?? []);
       })
       .catch((e: Error) => Alert.alert('Error', e.message))
       .finally(() => setLoading(false));

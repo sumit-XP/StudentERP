@@ -7,7 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
-import apiClient from '../../api/client';
+import communicationService from '../../services/communicationService';
 import { Notification } from '../../types/users';
 
 const NotificationsScreen: React.FC = () => {
@@ -16,13 +16,10 @@ const NotificationsScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiClient
-      .get('/communication/notifications')
-      .then((res) => {
-        const data = res.data as { data?: Notification[] } | Notification[];
-        setNotifications(
-          Array.isArray(data) ? data : (data as { data?: Notification[] }).data ?? [],
-        );
+    communicationService
+      .getNotifications()
+      .then((data) => {
+        setNotifications(Array.isArray(data) ? data : data ?? []);
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
@@ -30,7 +27,7 @@ const NotificationsScreen: React.FC = () => {
 
   const markRead = async (id: string) => {
     try {
-      await apiClient.put(`/communication/notifications/${id}/read`);
+      await communicationService.markNotificationAsRead(id);
       setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
     } catch {
       // silently fail on mark-read

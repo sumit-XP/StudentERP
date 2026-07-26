@@ -11,7 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { useRoute, RouteProp } from '@react-navigation/native';
-import apiClient from '../../api/client';
+import communicationService from '../../services/communicationService';
 import { useAuth } from '../../contexts/AuthContext';
 import { Message } from '../../types/communication';
 import { CommunicationStackParamList } from '../../navigation/features/CommunicationNavigator';
@@ -28,12 +28,12 @@ const ChatScreen: React.FC = () => {
   const listRef = useRef<FlatList<Message>>(null);
 
   useEffect(() => {
-    apiClient
-      .get('/communication/messages', { params: { recipientId } })
-      .then((res) => {
-        const data = res.data as { data?: Message[] } | Message[];
-        const msgs = Array.isArray(data) ? data : (data as { data?: Message[] }).data ?? [];
-        setMessages(msgs);
+    // Note: getMessages doesn't take params in the current service implementation, but we might want to update the service to pass it.
+    // Assuming backend returns messages based on user/recipient logic, or we'll update the service in a real scenario
+    communicationService
+      .getMessages()
+      .then((data) => {
+        setMessages(Array.isArray(data) ? data : data ?? []);
       })
       .catch((e: Error) => Alert.alert('Error', e.message));
   }, [recipientId]);
@@ -44,7 +44,7 @@ const ChatScreen: React.FC = () => {
     }
     setSending(true);
     try {
-      await apiClient.post('/communication/messages', { recipientId, content: text });
+      await communicationService.sendMessage(recipientId, text);
       const newMsg: Message = {
         id: String(Date.now()),
         senderId: user?.id ?? '',

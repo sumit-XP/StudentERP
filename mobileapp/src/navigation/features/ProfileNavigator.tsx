@@ -11,7 +11,7 @@ export type ProfileStackParamList = {
 const Stack = createStackNavigator<ProfileStackParamList>();
 
 const ProfileNavigator: React.FC = () => (
-  <Stack.Navigator>
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'My Profile' }} />
     <Stack.Screen
       name="Notifications"

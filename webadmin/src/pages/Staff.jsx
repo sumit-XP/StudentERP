@@ -438,6 +438,7 @@ export default function Staff() {
                 onChange={e => setCreateForm(s => ({ ...s, salary: e.target.value }))}
               />
             </div>
+            {/* (Temporarily Redundant)
             <div className="space-y-1">
               <div className="label">Photo</div>
               <input
@@ -456,6 +457,7 @@ export default function Staff() {
                 onChange={e => setCreateForm(s => ({ ...s, idProof: e.target.files[0] }))}
               />
             </div>
+            */}
             <div className="space-y-1 md:col-span-3">
               <div className="label">Login Password</div>
               <input
@@ -467,7 +469,7 @@ export default function Staff() {
               <div className="text-[10px] text-gray-500">Default password: {DEFAULT_STAFF_PASSWORD}. Staff can change this after first login.</div>
             </div>
             <div className="md:col-span-3 text-xs text-gray-500">
-              Fields marked * are mandatory. Employee ID is auto-generated. You can upload photo and ID proof now or later.
+              Fields marked * are mandatory. Employee ID is auto-generated.
             </div>
             <div className="md:col-span-3">
               <button className="btn btn-primary w-full" disabled={createLoading || uploadingFiles}>
@@ -516,6 +518,7 @@ export default function Staff() {
                 <thead>
                   <tr className="text-left text-gray-500">
                     <th className="p-2">Name</th>
+                    <th className="p-2">Emp Code</th>
                     <th className="p-2">Email</th>
                     <th className="p-2">Phone</th>
                     <th className="p-2">Role</th>
@@ -525,6 +528,12 @@ export default function Staff() {
                   {users.map(u => (
                     <tr key={u.id} className="border-t">
                       <td className="p-2">{u.name}</td>
+                      <td className="p-2">
+                        {u.employee_id
+                          ? <span className="inline-block bg-blue-50 text-blue-700 text-xs font-mono font-semibold px-2 py-0.5 rounded">{u.employee_id}</span>
+                          : <span className="text-gray-400 text-xs">-</span>
+                        }
+                      </td>
                       <td className="p-2">{u.email}</td>
                       <td className="p-2">{u.phone || '-'}</td>
                       <td className="p-2 capitalize">{u.role || u.role_name}</td>
@@ -532,7 +541,7 @@ export default function Staff() {
                   ))}
                   {users.length === 0 && !loading && (
                     <tr>
-                      <td className="p-3 text-gray-500" colSpan={4}>No users found for the selected filters.</td>
+                      <td className="p-3 text-gray-500" colSpan={5}>No users found for the selected filters.</td>
                     </tr>
                   )}
                 </tbody>

@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import apiClient from '../../api/client';
+import attendanceService from '../../services/attendanceService';
 
 interface ReportRow {
   studentId: string;
@@ -35,11 +35,8 @@ const AttendanceReportsScreen: React.FC = () => {
     }
     setLoading(true);
     try {
-      const res = await apiClient.get('/attendance/report', {
-        params: { classId, startDate, endDate },
-      });
-      const data = res.data as { data?: ReportRow[] } | ReportRow[];
-      setRows(Array.isArray(data) ? data : (data as { data?: ReportRow[] }).data ?? []);
+      const data = await attendanceService.getAttendanceReport({ classId, startDate, endDate });
+      setRows(Array.isArray(data) ? data : data ?? []);
     } catch (e: unknown) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Failed');
     } finally {

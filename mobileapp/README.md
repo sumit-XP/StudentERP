@@ -1,195 +1,113 @@
-# StudentERP Mobile App
+# StudentERP Mobile
 
-A React Native app focused on putting the most-used StudentERP workflows on mobile first. This README outlines planned functionality, setup guidance (Windows/Android-first), and integrations using Firebase + Cloudflare R2.
+React Native mobile app for the StudentERP system. Provides role-based access for admins, teachers, students, and parents with modules for dashboards, attendance, assignments, communication, fees, and user management.
 
-## Functionalities (Scope for Mobile)
+## Tech Stack
 
-- **Authentication & Roles**
-  - Secure sign-in/out (Firebase Authentication)
-  - Roles: Admin, Staff, Parent/Guardian (least-privilege access)
+- React Native 0.72.6
+- TypeScript
+- @react-navigation/native + stack + bottom-tabs
+- @react-native-firebase/* (auth, firestore, messaging, storage)
+- react-native-encrypted-storage
+- Axios with interceptors + axios-mock-adapter
 
-- **Student Profiles**
-  - Create/view/edit complete profiles
-  - Photograph capture from camera and gallery
-  - Personal details: name, DOB, address, contact info
-  - Class/section, roll no., enrollment status
+## Architecture
 
-- **Parent/Guardian Management**
-  - Multiple guardians per student with relationship type
-  - Multiple contact numbers/emails per guardian
-  - Quick actions: call, SMS, WhatsApp (when available)
+```
+src/
+├── api/                  # Axios client, mocks
+├── contexts/             # AuthContext
+├── navigation/
+│   ├── RootNavigator.tsx
+│   ├── AppNavigator.tsx
+│   ├── tabs/             # Role-specific bottom tab navigators
+│   └── features/         # Stack navigators per feature
+├── screens/
+│   ├── auth/
+│   ├── dashboards/
+│   ├── attendance/
+│   ├── assignments/
+│   ├── communication/
+│   ├── fees/
+│   ├── profile/
+│   └── users/
+├── services/
+├── types/
+└── __tests__/
+```
 
-- **Attendance**
-  - Daily/class-wise marking (quick mark, select all, toggle)
-  - View history and summary (per student, per class, per range)
-  - Late/leave remarks
+## Role-Based Navigation
 
-- **Academics**
-  - Subjects, timetable, assessments/exams
-  - Results/grades overview per student and per class
-  - Basic analytics (averages, trends) where feasible
+| Role | Tabs |
+|------|------|
+| Admin | Dashboard, Users, Fees, Profile |
+| Teacher | Dashboard, Attendance, Assignments, Profile |
+| Student | Dashboard, Assignments, Communication, Profile |
+| Parent | Dashboard, Fees, Communication, Profile |
 
-- **Digital Document Storage**
-  - Attach and preview documents: birth certificates, ID proofs, photos
-  - Scan from camera to image/PDF (mobile-friendly)
-  - Secure storage in Cloudflare R2 via presigned uploads/downloads
+## Implemented Screens
 
-- **Notifications**
-  - Push notifications via Firebase Cloud Messaging (FCM)
-  - Topic-based (e.g., class/grade) and per-user notifications
+### Dashboards
+- AdminDashboard, TeacherDashboard, StudentDashboard, ParentDashboard
+- AdminAttendanceOverview, AdminResultsOverview
+- GradingResults, CreateAnnouncement, StudentPayments
 
-- **Search & Filters**
-  - Search students by name/roll/phone
-  - Filters by class, section, status
+### Attendance
+- MarkAttendance (teacher)
+- AttendanceHistory (student/parent)
+- AttendanceReports (teacher/admin)
 
-- **Settings**
-  - Profile, password reset, sign-out
-  - App preferences (theme, basic localization readiness)
+### Assignments
+- AssignmentList, AssignmentDetail
+- SubmitAssignment (student)
+- GradeSubmission (teacher)
+- GradingResults
 
-- **Non-Functional**
-  - Secure by default (encryption in transit/at rest)
-  - Snappy UX with caching
-  - Accessibility-ready components where possible
+### Communication
+- Announcements
+- MessagesList, Chat
+- PTM (Parent-Teacher Meetings)
 
-- **Out of Scope (initially)**
-  - Payroll management
-  - Advanced teacher management flows
+### Fees
+- InvoiceList (filter/search)
+- InvoiceDetail
+- OnlinePayment (Razorpay order creation)
+- FeeReports (dues/defaulters/collections)
 
-## Getting Started (Windows, Android-first)
+### Users
+- UserList (admin directory + search)
+- StudentProfile (guardians + documents)
 
-- **Prerequisites**
-  - Node.js LTS (18.x or 20.x)
-  - Java JDK 17 (Adoptium Temurin recommended)
-  - Android Studio (SDK Platform 34+, Platform Tools)
-  - Environment vars: `JAVA_HOME`, `ANDROID_HOME`, add `platform-tools` to `PATH`
+### Profile
+- Profile (edit + password change)
+- Notifications
 
-- **Initialize React Native into this folder**
-  React Native CLI does not provide a `--directory` flag and generally wants to create the folder itself. Since this `mobileapp` folder exists, use one of the following:
-  1) Preferred (recreate folder):
-     - Delete the empty `mobileapp` folder
-     - From the StudentERP root, run:
-       ```bash
-       npx @react-native-community/cli@latest init mobileapp
-       ```
-  2) Alternative (init elsewhere then move):
-     - From the StudentERP root, run:
-       ```bash
-       npx @react-native-community/cli@latest init StudentERPMobile
-       ```
-     - Move the generated contents into `mobileapp/`.
+## Auth
 
-- **Run (Android)**
-  ```bash
-  cd mobileapp
-  npm install   # or: yarn
-  npx react-native doctor
-  npx react-native run-android   # or: yarn android
-  ```
+- JWT token stored in EncryptedStorage
+- Axios interceptor attaches token to requests
+- Mock login by email substring for dev/testing
+- Test role-switch menu on login screen
 
-## Backend (Firebase + Cloudflare R2) – High-Level Plan
+## API
 
-- **Services**
-  - Firebase Authentication (email/password, phone, SSO as needed)
-  - Firebase Firestore (profiles, guardians, attendance, academics, notifications, activity logs)
-  - Cloudflare R2 (document storage through S3-compatible API)
-  - Cloud Functions *or* Cloudflare Workers (API surface, presigned URLs, scheduled jobs)
-  - Cloudflare CDN (optional custom domain for faster document delivery)
+- Base client in `src/api/client.ts`
+- Response interceptor normalizes `{ data: ... }` wrapper
+- Mock adapter in `src/api/mockAdapter.ts` for offline dev
 
-- **Data model (initial)**
-  - Firestore collections: `students`, `guardians`, `attendance`, `academicRecords`, `notifications`, `activityLogs`
-  - Subcollections or references for multi-guardian links and document metadata (`students/{id}/documents/{docId}` with `r2Key`, `contentType`, `uploadedBy`, `createdAt`)
+## Testing
 
-- **Security & Governance**
-  - Firebase Authentication custom claims or role field to enforce RLS in Firestore Security Rules
-  - Firestore composite indexes for frequent queries (class/section filters, date ranges)
-  - R2 bucket kept private; access only via short-lived presigned URLs generated by trusted backend
-  - Cloudflare R2 object versioning + lifecycle to archival storage; periodic exports for backups
-  - Secrets (R2 API tokens, service accounts) stored in Firebase/Cloudflare secret stores; TLS everywhere
+```
+npm test
+```
 
-- **Provisioning & Automation**
-  - Firebase project with environments (`dev`, `prod`) using Firebase CLI and `firebase.json`
-  - Cloudflare infrastructure defined via `wrangler.toml` (Workers) and Terraform/CLI for R2 buckets
-  - CI/CD to deploy functions/workers with automated rule linting and integration tests
+Coverage includes AuthContext, authService, and API client.
 
-## Push Notifications (Firebase Cloud Messaging)
+## Run
 
-- **Client (React Native)**
-  - Packages: `@react-native-firebase/app`, `@react-native-firebase/messaging`
-  - Android: add `google-services.json` (from Firebase console) to `android/app/`
-  - Update Gradle files with Google Services plugin
-  - Request notification permission; get FCM token; handle foreground/background notifications
+```bash
+npm install
+npm start
+```
 
-- **Backend Sender**
-  - Store user-device tokens (by user and platform)
-  - Send via FCM HTTP v1 or Firebase Admin SDK from an AWS Lambda function
-  - Keep service account credentials in AWS Secrets Manager
-
-## Roadmap
-
-- Offline-first for attendance and profile edits with background sync
-- In-app announcements and messaging
-- Advanced analytics dashboards
-- Localization (multi-language)
-
-## Quick Start
-
-1. **Setup Prerequisites** (see SETUP.md for detailed instructions)
-   - Install Node.js, Java JDK 17, Android Studio
-   - Install Firebase CLI: `npm install -g firebase-tools`
-
-2. **Configure Firebase & Cloudflare**
-   - Create Firebase project and download `google-services.json`
-   - Create Cloudflare R2 bucket and get API credentials
-   - Copy `.env.example` to `.env` and fill in your credentials
-
-3. **Initialize React Native**
-   ```bash
-   # Delete this folder and recreate with React Native CLI
-   cd ..
-   rmdir /s mobileapp
-   npx @react-native-community/cli@latest init mobileapp
-   # Copy back the configuration files from this setup
-   ```
-
-4. **Deploy Backend**
-   ```bash
-   cd functions
-   npm install
-   firebase login
-   firebase deploy --only functions,firestore
-   ```
-
-5. **Run Mobile App**
-   ```bash
-   npm install
-   npm run android
-   ```
-
-## Files Created
-
-- **Firebase Configuration**: `firebase.json`, `.firebaserc`, `firestore.rules`, `firestore.indexes.json`
-- **Cloud Functions**: `functions/src/index.ts` (presigned URLs, FCM, auth triggers)
-- **React Native Config**: `package.json`, `.env.example`, `src/config/firebase.js`, `src/services/authService.js`
-- **Android Config**: `android/app/google-services.json.example`
-- **Setup Guide**: `SETUP.md` (detailed step-by-step instructions)
-- **CI/CD**: `.github/workflows/deploy.yml` (GitHub Actions)
-
-## What You Need to Provide
-
-### Firebase Details
-- Project ID, API key, auth domain (from Firebase console)
-- Download `google-services.json` for Android
-- FCM server key for push notifications
-
-### Cloudflare R2 Details  
-- Account ID, bucket name
-- R2 API access key ID and secret
-- R2 endpoint URL
-
-### Optional
-- Custom domain for R2 CDN
-- GitHub secrets for CI/CD pipeline
-
----
-
-**Ready to deploy!** Follow SETUP.md for complete configuration instructions.
+Then press `a` for Android or `i` for iOS.

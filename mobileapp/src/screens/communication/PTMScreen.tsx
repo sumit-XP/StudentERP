@@ -11,6 +11,7 @@ import {
   ScrollView,
 } from 'react-native';
 import apiClient from '../../api/client';
+import parentTeacherService from '../../services/parentTeacherService';
 import { PTMMeeting } from '../../types/communication';
 
 const PTMScreen: React.FC = () => {
@@ -23,11 +24,10 @@ const PTMScreen: React.FC = () => {
 
   const fetchMeetings = () => {
     setLoading(true);
-    apiClient
-      .get('/parent-teacher/ptm/upcoming')
-      .then((res) => {
-        const data = res.data as { data?: PTMMeeting[] } | PTMMeeting[];
-        setMeetings(Array.isArray(data) ? data : (data as { data?: PTMMeeting[] }).data ?? []);
+    parentTeacherService
+      .getUpcomingPTMs()
+      .then((data) => {
+        setMeetings(Array.isArray(data) ? data : data ?? []);
       })
       .catch((e: Error) => Alert.alert('Error', e.message))
       .finally(() => setLoading(false));
@@ -44,7 +44,7 @@ const PTMScreen: React.FC = () => {
     }
     setSubmitting(true);
     try {
-      await apiClient.post('/parent-teacher/ptm/schedule', { teacherId, scheduledAt, purpose });
+      await parentTeacherService.schedulePTM(teacherId, scheduledAt, purpose);
       Alert.alert('Success', 'Meeting scheduled!');
       setTeacherId('');
       setScheduledAt('');

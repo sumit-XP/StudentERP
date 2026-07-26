@@ -11,7 +11,7 @@ export type UsersStackParamList = {
 const Stack = createStackNavigator<UsersStackParamList>();
 
 const UsersNavigator: React.FC = () => (
-  <Stack.Navigator>
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="UserList" component={UserListScreen} options={{ title: 'Directory' }} />
     <Stack.Screen
       name="StudentProfile"

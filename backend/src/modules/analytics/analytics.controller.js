@@ -9,7 +9,7 @@ export const getDashboardOverview = async (req, res) => {
 
     // Get user role
     const userResult = await pool.query(
-      "SELECT u.id, r.name as role FROM users u JOIN roles r ON u.role_id = r.id WHERE u.firebase_uid = $1",
+      "SELECT u.id, r.name as role FROM users u JOIN roles r ON u.role_id = r.id WHERE u.uid = $1",
       [uid]
     );
     
@@ -23,7 +23,7 @@ export const getDashboardOverview = async (req, res) => {
     let overview = {};
 
     if (user.role === 'admin') {
-      overview = await getAdminDashboard();
+      overview = await getAdminDashboard(req.user.school_id);
     } else if (user.role === 'teacher') {
       overview = await getTeacherDashboard(user.id);
     } else if (user.role === 'student') {
@@ -42,14 +42,18 @@ export const getDashboardOverview = async (req, res) => {
 };
 
 // Admin Dashboard
-async function getAdminDashboard() {
+async function getAdminDashboard(schoolId) {
   const stats = {};
+  
+  if (!schoolId) {
+     throw new Error("Admin user is missing school_id");
+  }
 
   // Total counts
-  const totalUsers = await pool.query("SELECT COUNT(*) as count FROM users WHERE is_active = true");
-  const totalStudents = await pool.query("SELECT COUNT(*) as count FROM students");
-  const totalTeachers = await pool.query("SELECT COUNT(*) as count FROM teachers");
-  const totalClasses = await pool.query("SELECT COUNT(*) as count FROM classes");
+  const totalUsers = await pool.query("SELECT COUNT(*) as count FROM users WHERE is_active = true AND school_id = $1", [schoolId]);
+  const totalStudents = await pool.query("SELECT COUNT(*) as count FROM students WHERE school_id = $1", [schoolId]);
+  const totalTeachers = await pool.query("SELECT COUNT(*) as count FROM teachers WHERE school_id = $1", [schoolId]);
+  const totalClasses = await pool.query("SELECT COUNT(*) as count FROM classes WHERE school_id = $1", [schoolId]);
 
   stats.totalUsers = parseInt(totalUsers.rows[0].count);
   stats.totalStudents = parseInt(totalStudents.rows[0].count);
@@ -59,8 +63,8 @@ async function getAdminDashboard() {
   // Recent activities
   const recentAnnouncements = await pool.query(`
     SELECT COUNT(*) as count FROM announcements 
-    WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
-  `);
+    WHERE created_at >= CURRENT_DATE - INTERVAL '7 days' AND school_id = $1
+  `, [schoolId]);
   stats.recentAnnouncements = parseInt(recentAnnouncements.rows[0].count);
 
   // Attendance overview (last 7 days)
@@ -73,8 +77,8 @@ async function getAdminDashboard() {
         ELSE 0
       END as attendance_rate
     FROM attendance 
-    WHERE date >= CURRENT_DATE - INTERVAL '7 days'
-  `);
+    WHERE date >= CURRENT_DATE - INTERVAL '7 days' AND school_id = $1
+  `, [schoolId]);
   stats.weeklyAttendance = attendanceStats.rows[0];
 
   // Class-wise student distribution
@@ -82,9 +86,10 @@ async function getAdminDashboard() {
     SELECT c.name, c.section, c.grade_level, COUNT(s.id) as student_count
     FROM classes c
     LEFT JOIN students s ON c.id = s.class_id
+    WHERE c.school_id = $1
     GROUP BY c.id, c.name, c.section, c.grade_level
     ORDER BY c.grade_level, c.section
-  `);
+  `, [schoolId]);
   stats.classDistribution = classDistribution.rows;
 
   return stats;
@@ -97,10 +102,10 @@ async function getTeacherDashboard(teacherId) {
   // Classes taught
   const myClasses = await pool.query(`
     SELECT DISTINCT c.id, c.name, c.section, COUNT(s.id) as student_count
-    FROM class_subjects cs
-    JOIN classes c ON cs.class_id = c.id
+    FROM subjects sub
+    JOIN classes c ON sub.class_id = c.id
     LEFT JOIN students s ON c.id = s.class_id
-    WHERE cs.teacher_id = $1
+    WHERE sub.teacher_id = $1
     GROUP BY c.id, c.name, c.section
   `, [teacherId]);
   stats.myClasses = myClasses.rows;

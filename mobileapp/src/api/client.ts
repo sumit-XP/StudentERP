@@ -1,7 +1,8 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
 import EncryptedStorage from 'react-native-encrypted-storage';
+import { Platform } from 'react-native';
 
-const API_BASE_URL = process.env.API_BASE_URL || 'http://10.0.2.2:5000/api';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://10.151.63.148:5000/api';
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,

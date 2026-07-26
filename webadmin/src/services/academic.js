@@ -4,6 +4,7 @@ export const getClasses = () => api.get('/academic/classes')
 export const getClassesList = (params) => api.get('/academic/classes', { params })
 export const getStudents = (params) => api.get('/academic/students', { params })
 export const createStudent = (payload) => api.post('/academic/students', payload)
+export const batchCreateStudents = (payload) => api.post('/academic/students/batch', payload)
 
 // Academic years
 export const getAcademicYears = () => api.get('/academic/academic-years')

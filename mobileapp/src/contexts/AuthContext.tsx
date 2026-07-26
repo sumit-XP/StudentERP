@@ -14,6 +14,17 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const normalizeUser = (user: User | null): User | null => {
+  if (!user) {
+    return null;
+  }
+
+  return {
+    ...user,
+    role: user.role?.toLowerCase() as User['role'],
+  };
+};
+
 const authReducer = (state: AuthState, action: AuthAction): AuthState => {
   switch (action.type) {
     case 'RESTORE_TOKEN':
@@ -54,7 +65,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const token = await EncryptedStorage.getItem('auth_token');
         const userJson = await EncryptedStorage.getItem('auth_user');
-        const user: User | null = userJson ? (JSON.parse(userJson) as User) : null;
+        const user = normalizeUser(userJson ? (JSON.parse(userJson) as User) : null);
         dispatch({ type: 'RESTORE_TOKEN', token: token ?? null, user });
       } catch {
         dispatch({ type: 'RESTORE_TOKEN', token: null, user: null });
@@ -64,9 +75,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signIn = async (token: string, user: User): Promise<void> => {
+    const normalizedUser = normalizeUser(user) as User;
     await EncryptedStorage.setItem('auth_token', token);
-    await EncryptedStorage.setItem('auth_user', JSON.stringify(user));
-    dispatch({ type: 'SIGN_IN', token, user });
+    await EncryptedStorage.setItem('auth_user', JSON.stringify(normalizedUser));
+    dispatch({ type: 'SIGN_IN', token, user: normalizedUser });
   };
 
   const signOut = async (): Promise<void> => {

@@ -11,11 +11,24 @@ export const markAttendance = async (req, res) => {
     }
 
     // Get teacher/admin user ID
-    const userResult = await pool.query("SELECT id FROM users WHERE firebase_uid = $1", [uid]);
+    const userResult = await pool.query("SELECT id FROM users WHERE uid = $1", [uid]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
     const markedBy = userResult.rows[0].id;
+
+    if (attendanceData.length > 0) {
+      const sample = attendanceData[0];
+      if (sample.classId && sample.date) {
+        const existingCheck = await pool.query(
+          "SELECT id FROM attendance WHERE class_id = $1 AND date = $2 LIMIT 1",
+          [sample.classId, sample.date]
+        );
+        if (existingCheck.rows.length > 0) {
+          return res.status(400).json({ error: "Attendance already marked for this class on this date" });
+        }
+      }
+    }
 
     const results = [];
     
@@ -110,11 +123,44 @@ export const getAttendanceByClassAndDate = async (req, res) => {
 
     const result = await pool.query(query, queryParams);
 
-    res.json({ attendance: result.rows });
+    // Check if it's marked as non-working day
+    const nwd = await pool.query(
+      "SELECT id FROM non_working_days WHERE class_id = $1 AND date = $2",
+      [classId, date]
+    );
+
+    res.json({ 
+      attendance: result.rows,
+      isNonWorkingDay: nwd.rows.length > 0
+    });
   } catch (error) {
     console.error("Get attendance error:", error);
     res.status(500).json({ error: "Failed to fetch attendance" });
   }
+};
+
+// Helper to calculate total working days between dates
+const getWorkingDays = async (classId, schoolId, startDate, endDate) => {
+  // 1. Get base weekdays (excluding Sunday = 7 in isodow)
+  const weekdaysRes = await pool.query(`
+    SELECT count(*) as days 
+    FROM generate_series($1::date, $2::date, '1 day') AS gs(d) 
+    WHERE extract(isodow from d) < 7
+  `, [startDate, endDate]);
+  
+  const baseDays = parseInt(weekdaysRes.rows[0].days, 10);
+
+  // 2. Subtract marked non-working days for this class that fell on weekdays
+  const nwdRes = await pool.query(`
+    SELECT count(*) as nwd
+    FROM non_working_days
+    WHERE class_id = $1 AND date >= $2 AND date <= $3
+      AND extract(isodow from date) < 7
+  `, [classId, startDate, endDate]);
+
+  const nwdDays = parseInt(nwdRes.rows[0].nwd, 10);
+  
+  return baseDays - nwdDays;
 };
 
 // Get Student Attendance Summary
@@ -126,17 +172,30 @@ export const getStudentAttendanceSummary = async (req, res) => {
       return res.status(400).json({ error: "Student ID is required" });
     }
 
+    const stRes = await pool.query("SELECT class_id, school_id FROM students WHERE id = $1", [studentId]);
+    if (stRes.rows.length === 0) return res.status(404).json({ error: "Student not found" });
+    const { class_id: classId, school_id: schoolId } = stRes.rows[0];
+
+    // Determine calculation range
+    let calcStart = startDate;
+    let calcEnd = endDate || new Date().toISOString().slice(0, 10);
+
+    if (!calcStart) {
+      const ayRes = await pool.query("SELECT start_date FROM academic_years WHERE school_id = $1 AND is_current = true", [schoolId]);
+      if (ayRes.rows.length > 0) {
+        calcStart = new Date(ayRes.rows[0].start_date).toISOString().slice(0, 10);
+      } else {
+        const minAtt = await pool.query("SELECT min(date) as min_date FROM attendance WHERE class_id = $1", [classId]);
+        calcStart = minAtt.rows[0].min_date ? new Date(minAtt.rows[0].min_date).toISOString().slice(0, 10) : calcEnd;
+      }
+    }
+
     let query = `
       SELECT 
-        COUNT(*) as total_days,
         COUNT(CASE WHEN status = 'present' THEN 1 END) as present_days,
         COUNT(CASE WHEN status = 'absent' THEN 1 END) as absent_days,
         COUNT(CASE WHEN status = 'late' THEN 1 END) as late_days,
-        COUNT(CASE WHEN status = 'excused' THEN 1 END) as excused_days,
-        ROUND(
-          (COUNT(CASE WHEN status = 'present' THEN 1 END) * 100.0 / 
-           NULLIF(COUNT(*), 0)), 2
-        ) as attendance_percentage
+        COUNT(CASE WHEN status = 'excused' THEN 1 END) as excused_days
       FROM attendance 
       WHERE student_id = $1
     `;
@@ -144,16 +203,16 @@ export const getStudentAttendanceSummary = async (req, res) => {
     const queryParams = [studentId];
     let paramCount = 1;
 
-    if (startDate) {
+    if (calcStart) {
       paramCount++;
       query += ` AND date >= $${paramCount}`;
-      queryParams.push(startDate);
+      queryParams.push(calcStart);
     }
 
-    if (endDate) {
+    if (calcEnd) {
       paramCount++;
       query += ` AND date <= $${paramCount}`;
-      queryParams.push(endDate);
+      queryParams.push(calcEnd);
     }
 
     if (subjectId) {
@@ -163,6 +222,23 @@ export const getStudentAttendanceSummary = async (req, res) => {
     }
 
     const summaryResult = await pool.query(query, queryParams);
+    
+    // Calculate total working days and percentage
+    let total_days = await getWorkingDays(classId, schoolId, calcStart, calcEnd);
+    if (total_days < 0) total_days = 0;
+    
+    let dbResult = summaryResult.rows[0];
+    let present = parseInt(dbResult.present_days, 10) || 0;
+    let attendance_percentage = total_days > 0 ? ((present / total_days) * 100).toFixed(2) : "0.00";
+
+    const formattedSummary = {
+      total_days,
+      present_days: dbResult.present_days,
+      absent_days: dbResult.absent_days,
+      late_days: dbResult.late_days,
+      excused_days: dbResult.excused_days,
+      attendance_percentage
+    };
 
     // Get detailed attendance records
     let detailQuery = `
@@ -198,7 +274,7 @@ export const getStudentAttendanceSummary = async (req, res) => {
     const detailResult = await pool.query(detailQuery, detailParams);
 
     res.json({
-      summary: summaryResult.rows[0],
+      summary: formattedSummary,
       records: detailResult.rows
     });
   } catch (error) {
@@ -216,56 +292,71 @@ export const getClassAttendanceSummary = async (req, res) => {
       return res.status(400).json({ error: "Class ID is required" });
     }
 
+    const clRes = await pool.query("SELECT school_id FROM classes WHERE id = $1", [classId]);
+    if (clRes.rows.length === 0) return res.status(404).json({ error: "Class not found" });
+    const schoolId = clRes.rows[0].school_id;
+
+    let calcStart = startDate;
+    let calcEnd = endDate || new Date().toISOString().slice(0, 10);
+
+    if (!calcStart) {
+      const ayRes = await pool.query("SELECT start_date FROM academic_years WHERE school_id = $1 AND is_current = true", [schoolId]);
+      if (ayRes.rows.length > 0) {
+        calcStart = new Date(ayRes.rows[0].start_date).toISOString().slice(0, 10);
+      } else {
+        const minAtt = await pool.query("SELECT min(date) as min_date FROM attendance WHERE class_id = $1", [classId]);
+        calcStart = minAtt.rows[0].min_date ? new Date(minAtt.rows[0].min_date).toISOString().slice(0, 10) : calcEnd;
+      }
+    }
+
     let query = `
       SELECT 
         s.id as student_id,
         s.student_id as student_number,
         u.name as student_name,
         s.roll_number,
-        COUNT(a.id) as total_days,
         COUNT(CASE WHEN a.status = 'present' THEN 1 END) as present_days,
         COUNT(CASE WHEN a.status = 'absent' THEN 1 END) as absent_days,
         COUNT(CASE WHEN a.status = 'late' THEN 1 END) as late_days,
-        COUNT(CASE WHEN a.status = 'excused' THEN 1 END) as excused_days,
-        ROUND(
-          (COUNT(CASE WHEN a.status = 'present' THEN 1 END) * 100.0 / 
-           NULLIF(COUNT(a.id), 0)), 2
-        ) as attendance_percentage
+        COUNT(CASE WHEN a.status = 'excused' THEN 1 END) as excused_days
       FROM students s
       JOIN users u ON s.user_id = u.id
       LEFT JOIN attendance a ON s.id = a.student_id AND a.class_id = s.class_id
-      WHERE s.class_id = $1
     `;
     
-    const queryParams = [classId];
-    let paramCount = 1;
-
-    if (startDate) {
-      paramCount++;
-      query += ` AND (a.date IS NULL OR a.date >= $${paramCount})`;
-      queryParams.push(startDate);
+    // Add left join conditions for dates to ensure we only count attendance in range
+    if (calcStart) {
+      query += ` AND a.date >= '${calcStart}'`;
     }
-
-    if (endDate) {
-      paramCount++;
-      query += ` AND (a.date IS NULL OR a.date <= $${paramCount})`;
-      queryParams.push(endDate);
+    if (calcEnd) {
+      query += ` AND a.date <= '${calcEnd}'`;
     }
-
     if (subjectId) {
-      paramCount++;
-      query += ` AND (a.subject_id IS NULL OR a.subject_id = $${paramCount})`;
-      queryParams.push(subjectId);
+      query += ` AND a.subject_id = ${parseInt(subjectId, 10)}`;
     }
 
     query += `
+      WHERE s.class_id = $1
       GROUP BY s.id, s.student_id, u.name, s.roll_number
       ORDER BY s.roll_number, u.name
     `;
 
-    const result = await pool.query(query, queryParams);
+    const result = await pool.query(query, [classId]);
+    
+    let total_days = await getWorkingDays(classId, schoolId, calcStart, calcEnd);
+    if (total_days < 0) total_days = 0;
 
-    res.json({ attendanceSummary: result.rows });
+    const formattedSummary = result.rows.map(row => {
+      let present = parseInt(row.present_days, 10) || 0;
+      let attendance_percentage = total_days > 0 ? ((present / total_days) * 100).toFixed(2) : "0.00";
+      return {
+        ...row,
+        total_days,
+        attendance_percentage
+      };
+    });
+
+    res.json({ attendanceSummary: formattedSummary });
   } catch (error) {
     console.error("Get class attendance summary error:", error);
     res.status(500).json({ error: "Failed to fetch class attendance summary" });
@@ -338,22 +429,33 @@ export const getAttendanceReport = async (req, res) => {
 // Get My Attendance (for students)
 export const getMyAttendance = async (req, res) => {
   try {
-    const { uid } = req.user;
-    const { startDate, endDate, subjectId } = req.query;
+    const { uid, role } = req.user;
 
-    // Get student ID from user
-    const studentResult = await pool.query(
-      "SELECT id FROM students WHERE user_id = (SELECT id FROM users WHERE firebase_uid = $1)",
-      [uid]
-    );
+    let studentResult;
+
+    if (role === "parent") {
+      // Parent: find the student linked to this parent user
+      studentResult = await pool.query(
+        `SELECT s.id FROM students s
+         JOIN users u ON u.uid = $1
+         WHERE s.parent_id = u.id
+         LIMIT 1`,
+        [uid]
+      );
+    } else {
+      // Student: find own record
+      studentResult = await pool.query(
+        "SELECT id FROM students WHERE user_id = (SELECT id FROM users WHERE uid = $1)",
+        [uid]
+      );
+    }
 
     if (studentResult.rows.length === 0) {
-      return res.status(404).json({ error: "Student record not found" });
+      // Return empty rather than 404 so the dashboard doesn't crash
+      return res.json({ attendance: [], records: [], summary: null });
     }
 
     const studentId = studentResult.rows[0].id;
-
-    // Use existing function logic
     req.query.studentId = studentId;
     return getStudentAttendanceSummary(req, res);
   } catch (error) {
@@ -361,3 +463,29 @@ export const getMyAttendance = async (req, res) => {
     res.status(500).json({ error: "Failed to fetch attendance" });
   }
 };
+
+export const markNonWorkingDay = async (req, res) => {
+  try {
+    const { classId, date } = req.body;
+    if (!classId || !date) return res.status(400).json({ error: "Class ID and date are required" });
+
+    // Ensure it's not already marked
+    await pool.query(
+      `INSERT INTO non_working_days (class_id, date, school_id) VALUES ($1, $2, $3)
+       ON CONFLICT (class_id, date) DO NOTHING`,
+      [classId, date, req.tenantId]
+    );
+
+    // Delete any attendance records for this date and class
+    await pool.query(
+      "DELETE FROM attendance WHERE class_id = $1 AND date = $2",
+      [classId, date]
+    );
+
+    res.json({ message: "Marked as non-working day successfully" });
+  } catch (error) {
+    console.error("markNonWorkingDay error:", error);
+    res.status(500).json({ error: "Failed to mark non-working day" });
+  }
+};
+
