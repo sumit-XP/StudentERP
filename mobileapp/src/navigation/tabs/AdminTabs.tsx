@@ -3,15 +3,15 @@ import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import DashboardNavigator from '../features/DashboardNavigator';
 import UsersNavigator from '../features/UsersNavigator';
-import FeesNavigator from '../features/FeesNavigator';
-import CommunicationNavigator from '../features/CommunicationNavigator';
+import AnnouncementsNavigator from '../features/AnnouncementsNavigator';
+import MessagingNavigator from '../features/MessagingNavigator';
 import ProfileNavigator from '../features/ProfileNavigator';
-import { DashboardIcon, UsersIcon, WalletIcon, MessageIcon, ProfileIcon } from '../../assets/svgs';
+import { DashboardIcon, UsersIcon, MegaphoneIcon, MessageIcon, ProfileIcon } from '../../assets/svgs';
 
 export type AdminTabsParamList = {
   DashboardTab: undefined;
   UsersTab: undefined;
-  FeesTab: undefined;
+  AnnouncementsTab: undefined;
   MessagesTab: undefined;
   ProfileTab: undefined;
 };
@@ -55,8 +55,8 @@ const AdminTabs: React.FC = () => {
             return <DashboardIcon size={size} color={color} />;
           } else if (route.name === 'UsersTab') {
             return <UsersIcon size={size} color={color} />;
-          } else if (route.name === 'FeesTab') {
-            return <WalletIcon size={size} color={color} />;
+          } else if (route.name === 'AnnouncementsTab') {
+            return <MegaphoneIcon size={size} color={color} />;
           } else if (route.name === 'MessagesTab') {
             return <MessageIcon size={size} color={color} />;
           } else if (route.name === 'ProfileTab') {
@@ -76,13 +76,13 @@ const AdminTabs: React.FC = () => {
         options={{ title: 'Users', unmountOnBlur: true }}
       />
       <Tab.Screen
-        name="FeesTab"
-        component={FeesNavigator}
-        options={{ title: 'Fees', unmountOnBlur: true }}
+        name="AnnouncementsTab"
+        component={AnnouncementsNavigator}
+        options={{ title: 'Notices', unmountOnBlur: true }}
       />
       <Tab.Screen
         name="MessagesTab"
-        component={CommunicationNavigator}
+        component={MessagingNavigator}
         options={{ title: 'Messages', unmountOnBlur: true }}
       />
       <Tab.Screen
