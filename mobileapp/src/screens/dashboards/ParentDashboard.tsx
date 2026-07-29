@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
+  Modal,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../contexts/AuthContext';
@@ -20,15 +21,19 @@ import {
   FactCheckIcon,
   AlertCircleIcon,
   InformationOutlineIcon,
+  MenuIcon,
+  MegaphoneIcon,
+  LogoutIcon,
 } from '../../assets/svgs';
 import attendanceService from '../../services/attendanceService';
 import communicationService from '../../services/communicationService';
 
 const ParentDashboard: React.FC = () => {
   const navigation = useNavigation();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showDrawer, setShowDrawer] = useState(false);
   const [attendance, setAttendance] = useState('94%');
   const [announcements, setAnnouncements] = useState<any[]>([]);
 
@@ -71,12 +76,112 @@ const ParentDashboard: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
+      {/* Side Navigation Drawer Overlay */}
+      {showDrawer && (
+        <Modal
+          transparent
+          visible={showDrawer}
+          animationType="none"
+          onRequestClose={() => setShowDrawer(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.drawerContentContainer}>
+              <View style={styles.drawerHeader}>
+                <Text style={styles.drawerAdminName}>{user?.name || 'Parent User'}</Text>
+                <Text style={styles.drawerAdminRole}>PARENT GUARDIAN</Text>
+                <Text style={styles.drawerAdminId}>{user?.email || 'parent@educore.edu'}</Text>
+              </View>
+
+              <ScrollView style={styles.drawerNav}>
+                <TouchableOpacity
+                  style={styles.drawerNavItem}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setShowDrawer(false);
+                    navigation.navigate('StudentReportCard' as never);
+                  }}
+                >
+                  <SchoolIcon size={22} color="#e65100" />
+                  <Text style={styles.drawerNavItemText}>Report Card & Grades</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.drawerNavItem}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setShowDrawer(false);
+                    navigation.navigate('Announcements' as never);
+                  }}
+                >
+                  <MegaphoneIcon size={22} color="#e65100" />
+                  <Text style={styles.drawerNavItemText}>School Bulletins</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.drawerNavItem}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setShowDrawer(false);
+                    navigation.navigate('StudentPayments' as never);
+                  }}
+                >
+                  <CreditCardOutlineIcon size={22} color="#e65100" />
+                  <Text style={styles.drawerNavItemText}>Tuition & Fee Payments</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.drawerNavItem}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setShowDrawer(false);
+                    navigation.navigate('Messaging' as never);
+                  }}
+                >
+                  <SendIcon size={22} color="#e65100" />
+                  <Text style={styles.drawerNavItemText}>Teacher Chat & Messages</Text>
+                </TouchableOpacity>
+              </ScrollView>
+
+              <View style={styles.drawerFooter}>
+                <TouchableOpacity
+                  style={styles.drawerLogoutBtn}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setShowDrawer(false);
+                    signOut();
+                  }}
+                >
+                  <LogoutIcon size={20} color="#ba1a1a" />
+                  <Text style={styles.drawerLogoutText}>Sign Out</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.drawerOverlayTouch}
+              activeOpacity={1}
+              onPress={() => setShowDrawer(false)}
+            />
+          </View>
+        </Modal>
+      )}
+
+      {/* Top Header Bar */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Parent Portal</Text>
-        <Text style={styles.headerSubtitle}>
-          Monitor your child's academic progress, messages, and invoices.
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View>
+            <Text style={styles.headerTitle}>Parent Portal</Text>
+            <Text style={styles.headerSubtitle}>
+              Monitor your child's academic progress, messages, and invoices.
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={{ padding: 8 }}
+            activeOpacity={0.7}
+            onPress={() => setShowDrawer(true)}
+          >
+            <MenuIcon size={24} color="#e65100" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -432,6 +537,75 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     width: '48%',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(18, 28, 40, 0.4)',
+    flexDirection: 'row',
+  },
+  drawerContentContainer: {
+    width: 280,
+    backgroundColor: '#ffffff',
+    height: '100%',
+    paddingTop: Platform.OS === 'ios' ? 48 : 20,
+    justifyContent: 'space-between',
+    elevation: 10,
+  },
+  drawerHeader: {
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f2f8',
+    backgroundColor: '#fff3e0',
+  },
+  drawerAdminName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#121c28',
+  },
+  drawerAdminRole: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#e65100',
+    marginTop: 2,
+  },
+  drawerAdminId: {
+    fontSize: 11,
+    color: '#737686',
+    marginTop: 4,
+  },
+  drawerNav: {
+    flex: 1,
+    paddingTop: 12,
+  },
+  drawerNavItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  drawerNavItemText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#434654',
+  },
+  drawerFooter: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f2f8',
+  },
+  drawerLogoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  drawerLogoutText: {
+    color: '#ba1a1a',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  drawerOverlayTouch: {
+    flex: 1,
   },
 });
 

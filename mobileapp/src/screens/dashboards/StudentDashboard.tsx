@@ -43,6 +43,7 @@ import {
   AlertCircleIcon,
   CreditCardOutlineIcon,
   ContactlessPayIcon,
+  MegaphoneIcon,
 } from '../../assets/svgs';
 
 type NavProp = StackNavigationProp<DashboardStackParamList, 'Overview'>;
@@ -165,12 +166,12 @@ const StudentDashboard: React.FC = () => {
   const drawerItems: DrawerItem[] = [
     {
       icon: <DashboardIcon size={18} color="#ffffff" />,
-      label: 'Dashboard',
+      label: 'Dashboard Overview',
       onPress: () => closeDrawer(),
     },
     {
       icon: <CalendarIcon size={18} color="#003fb1" />,
-      label: 'Schedule',
+      label: 'Class Schedule',
       onPress: () => {
         closeDrawer();
         navigation.navigate('StudentSchedule');
@@ -178,7 +179,7 @@ const StudentDashboard: React.FC = () => {
     },
     {
       icon: <SchoolIcon size={18} color="#003fb1" />,
-      label: 'Grades',
+      label: 'Report Card & Grades',
       onPress: () => {
         closeDrawer();
         navigation.navigate('StudentReportCard');
@@ -186,38 +187,32 @@ const StudentDashboard: React.FC = () => {
     },
     {
       icon: <AssignmentIcon size={18} color="#003fb1" />,
-      label: 'Assignments',
+      label: 'Assignments & Homework',
       badge: homeworkList.length ? `${homeworkList.length}` : undefined,
       onPress: handleViewAssignments,
     },
     {
       icon: <FactCheckIcon size={18} color="#003fb1" />,
-      label: 'Attendance',
+      label: 'My Attendance',
       onPress: () => {
         closeDrawer();
         navigation.navigate('StudentAttendance');
       },
     },
     {
-      icon: <ParentCircleIcon size={18} color="#003fb1" />,
-      label: 'Parent - Pay Fees',
-      badge: '!',
-      onPress: handlePayNow,
-    },
-    {
-      icon: <SendIcon size={18} color="#003fb1" />,
-      label: 'Messages',
+      icon: <MegaphoneIcon size={18} color="#003fb1" />,
+      label: 'School Announcements',
       onPress: () => {
         closeDrawer();
-        navigation.navigate('Messaging');
+        navigation.navigate('Announcements');
       },
     },
     {
-      icon: <HelpCircleIcon size={18} color="#003fb1" />,
-      label: 'Help & Support',
+      icon: <SendIcon size={18} color="#003fb1" />,
+      label: 'Messages & Chat',
       onPress: () => {
         closeDrawer();
-        Alert.alert('Help Center', 'EduCore Student Support: support@educore.edu');
+        navigation.navigate('Messaging');
       },
     },
   ];

@@ -23,12 +23,13 @@ import {
   BellIcon,
   ProfileIcon,
   AccountDetailsIcon,
-  SettingsIcon,
-  SecurityIcon,
   LogoutIcon,
   MegaphoneIcon,
   ReportIcon,
   PlusIcon,
+  FactCheckIcon,
+  SchoolIcon,
+  SendIcon,
 } from '../../assets/svgs';
 
 type NavProp = StackNavigationProp<DashboardStackParamList, 'Overview'>;
@@ -208,21 +209,76 @@ const AdminDashboard: React.FC = () => {
 
               {/* Drawer Links */}
               <ScrollView style={styles.drawerNav}>
-                <TouchableOpacity style={styles.drawerNavItem} activeOpacity={0.6}>
-                  <ProfileIcon size={22} color="#434654" />
-                  <Text style={styles.drawerNavItemText}>My Profile</Text>
+                <TouchableOpacity
+                  style={styles.drawerNavItem}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setShowDrawer(false);
+                    navigation.navigate('UserList' as never);
+                  }}
+                >
+                  <AccountDetailsIcon size={22} color="#003fb1" />
+                  <Text style={styles.drawerNavItemText}>Users & Staff</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.drawerNavItem} activeOpacity={0.6}>
-                  <AccountDetailsIcon size={22} color="#434654" />
-                  <Text style={styles.drawerNavItemText}>Account Details</Text>
+
+                <TouchableOpacity
+                  style={styles.drawerNavItem}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setShowDrawer(false);
+                    navigation.navigate('AdminAttendanceOverview' as never);
+                  }}
+                >
+                  <FactCheckIcon size={22} color="#003fb1" />
+                  <Text style={styles.drawerNavItemText}>Class Attendance</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.drawerNavItem} activeOpacity={0.6}>
-                  <SettingsIcon size={22} color="#434654" />
-                  <Text style={styles.drawerNavItemText}>Settings</Text>
+
+                <TouchableOpacity
+                  style={styles.drawerNavItem}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setShowDrawer(false);
+                    navigation.navigate('AdminClasses' as never);
+                  }}
+                >
+                  <SchoolIcon size={22} color="#003fb1" />
+                  <Text style={styles.drawerNavItemText}>Manage Classes</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.drawerNavItem} activeOpacity={0.6}>
-                  <SecurityIcon size={22} color="#434654" />
-                  <Text style={styles.drawerNavItemText}>Security</Text>
+
+                <TouchableOpacity
+                  style={styles.drawerNavItem}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setShowDrawer(false);
+                    navigation.navigate('Announcements' as never);
+                  }}
+                >
+                  <MegaphoneIcon size={22} color="#003fb1" />
+                  <Text style={styles.drawerNavItemText}>Announcements</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.drawerNavItem}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setShowDrawer(false);
+                    navigation.navigate('AdminResultsOverview' as never);
+                  }}
+                >
+                  <ReportIcon size={22} color="#003fb1" />
+                  <Text style={styles.drawerNavItemText}>Student Results</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.drawerNavItem}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setShowDrawer(false);
+                    navigation.navigate('Messaging' as never);
+                  }}
+                >
+                  <SendIcon size={22} color="#003fb1" />
+                  <Text style={styles.drawerNavItemText}>Messages & Chat</Text>
                 </TouchableOpacity>
               </ScrollView>
 

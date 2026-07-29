@@ -18,6 +18,8 @@ import TeacherScheduleScreen from '../../screens/schedule/TeacherScheduleScreen'
 import StudentScheduleScreen from '../../screens/schedule/StudentScheduleScreen';
 import StudentAttendanceScreen from '../../screens/attendance/StudentAttendanceScreen';
 import StudentReportCardScreen from '../../screens/results/StudentReportCardScreen';
+import MarkAttendanceScreen from '../../screens/attendance/MarkAttendanceScreen';
+import UserListScreen from '../../screens/users/UserListScreen';
 
 export type DashboardStackParamList = {
   Overview: undefined;
@@ -34,6 +36,8 @@ export type DashboardStackParamList = {
   StudentSchedule: undefined;
   StudentAttendance: undefined;
   StudentReportCard: undefined;
+  MarkAttendance: undefined;
+  UserList: undefined;
 };
 
 const Stack = createStackNavigator<DashboardStackParamList>();
@@ -125,6 +129,16 @@ const DashboardNavigator: React.FC = () => {
         name="StudentReportCard"
         component={StudentReportCardScreen}
         options={{ title: 'Report Card' }}
+      />
+      <Stack.Screen
+        name="MarkAttendance"
+        component={MarkAttendanceScreen}
+        options={{ title: 'Mark Attendance' }}
+      />
+      <Stack.Screen
+        name="UserList"
+        component={UserListScreen}
+        options={{ title: 'User Management' }}
       />
     </Stack.Navigator>
   );

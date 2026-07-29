@@ -201,74 +201,74 @@ const TeacherDashboard: React.FC = () => {
               <ScrollView style={styles.drawerNav}>
                 <TouchableOpacity
                   style={styles.drawerNavItem}
-                  activeOpacity={0.6}
+                  activeOpacity={0.7}
                   onPress={() => {
                     setShowDrawer(false);
-                    handleMarkAttendance();
+                    navigation.navigate('MarkAttendance' as never);
                   }}
                 >
-                  <FactCheckIcon size={22} color="#434654" />
-                  <Text style={styles.drawerNavItemText}>Attendance</Text>
+                  <FactCheckIcon size={22} color="#003fb1" />
+                  <Text style={styles.drawerNavItemText}>Mark Attendance</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.drawerNavItem}
-                  activeOpacity={0.6}
+                  activeOpacity={0.7}
                   onPress={() => {
                     setShowDrawer(false);
-                    handleAssignHomework();
+                    navigation.navigate('AssignHomework' as never);
                   }}
                 >
-                  <AssignmentIcon size={22} color="#434654" />
-                  <Text style={styles.drawerNavItemText}>Assignments</Text>
+                  <AssignmentIcon size={22} color="#003fb1" />
+                  <Text style={styles.drawerNavItemText}>Assign Homework</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.drawerNavItem}
-                  activeOpacity={0.6}
+                  activeOpacity={0.7}
                   onPress={() => {
                     setShowDrawer(false);
-                    handleUpdateResults();
+                    navigation.navigate('GradingResults' as never);
                   }}
                 >
-                  <AnalyticsIcon size={22} color="#434654" />
-                  <Text style={styles.drawerNavItemText}>Results</Text>
+                  <AnalyticsIcon size={22} color="#003fb1" />
+                  <Text style={styles.drawerNavItemText}>Gradebook & Results</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.drawerNavItem}
-                  activeOpacity={0.6}
+                  activeOpacity={0.7}
                   onPress={() => {
                     setShowDrawer(false);
-                    Alert.alert('Schedule', 'Opening schedule calendar.');
+                    navigation.navigate('TeacherSchedule' as never);
                   }}
                 >
-                  <CalendarIcon size={22} color="#434654" />
-                  <Text style={styles.drawerNavItemText}>Schedule</Text>
+                  <CalendarIcon size={22} color="#003fb1" />
+                  <Text style={styles.drawerNavItemText}>My Class Schedule</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.drawerNavItem}
-                  activeOpacity={0.6}
+                  activeOpacity={0.7}
                   onPress={() => {
                     setShowDrawer(false);
-                    Alert.alert('Grades', 'Opening grades configuration.');
+                    navigation.navigate('Announcements' as never);
                   }}
                 >
-                  <GradeIcon size={22} color="#434654" />
-                  <Text style={styles.drawerNavItemText}>Grades</Text>
+                  <MegaphoneIcon size={22} color="#003fb1" />
+                  <Text style={styles.drawerNavItemText}>School Announcements</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.drawerNavItem}
-                  activeOpacity={0.6}
+                  activeOpacity={0.7}
                   onPress={() => {
                     setShowDrawer(false);
-                    Alert.alert('Settings', 'Opening system settings.');
+                    navigation.navigate('Messaging' as never);
                   }}
                 >
-                  <SettingsIcon size={22} color="#434654" />
-                  <Text style={styles.drawerNavItemText}>Settings</Text>
+                  <SendIcon size={22} color="#003fb1" />
+                  <Text style={styles.drawerNavItemText}>Messages & Chat</Text>
                 </TouchableOpacity>
               </ScrollView>
 
