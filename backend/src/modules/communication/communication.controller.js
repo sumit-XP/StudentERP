@@ -118,7 +118,7 @@ export const getAnnouncements = async (req, res) => {
 
     // Get user info to filter announcements
     const userResult = await pool.query(
-      `SELECT u.id, r.name as role_name FROM users u 
+      `SELECT u.id, u.school_id, r.name as role_name FROM users u 
        JOIN roles r ON u.role_id = r.id 
        WHERE u.uid = $1`,
       [uid]
@@ -140,10 +140,11 @@ export const getAnnouncements = async (req, res) => {
     const queryParams = [activeBool];
     let paramCount = 1;
 
-    if (req.tenantId) {
+    const tenantId = req.tenantId || user.school_id || null;
+    if (tenantId) {
       paramCount++;
-      query += ` AND a.school_id = $${paramCount}`;
-      queryParams.push(req.tenantId);
+      query += ` AND a.school_id::text = $${paramCount}::text`;
+      queryParams.push(tenantId);
     }
 
     // Filter based on user role and target audience
@@ -290,6 +291,7 @@ export const getMessageRecipients = async (req, res) => {
     }
 
     const currentUser = currentUserResult.rows[0];
+    const tenantId = req.tenantId || currentUser.school_id || null;
     const params = [currentUser.id];
     let paramCount = 1;
     let query = `
@@ -299,10 +301,10 @@ export const getMessageRecipients = async (req, res) => {
       WHERE u.is_active = true AND u.id <> $1
     `;
 
-    if (currentUser.school_id) {
+    if (tenantId) {
       paramCount++;
       query += ` AND u.school_id = $${paramCount}`;
-      params.push(currentUser.school_id);
+      params.push(tenantId);
     }
 
     if (search) {
@@ -319,7 +321,7 @@ export const getMessageRecipients = async (req, res) => {
 
     paramCount++;
     query += ` ORDER BY u.name ASC LIMIT $${paramCount}`;
-    params.push(Math.min(Number(limit) || 10, 25));
+    params.push(Math.min(Number(limit) || 50, 100));
 
     const result = await pool.query(query, params);
     res.json({ users: result.rows });
@@ -340,17 +342,18 @@ export const sendMessage = async (req, res) => {
     }
 
     // Get sender ID
-    const userResult = await pool.query("SELECT id FROM users WHERE uid = $1", [uid]);
+    const userResult = await pool.query("SELECT u.id, u.school_id FROM users u WHERE u.uid = $1", [uid]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
     const senderId = userResult.rows[0].id;
+    const tenantId = req.tenantId || userResult.rows[0].school_id || null;
 
     if (receiverId === 'common_group') {
       const result = await pool.query(
         `INSERT INTO messages (sender_id, receiver_id, message_text, message_type, file_url, parent_message_id, school_id, group_type) 
          VALUES ($1, NULL, $2, $3, $4, $5, $6, 'common_group') RETURNING *`,
-        [senderId, messageText, messageType, fileUrl, parentMessageId, req.tenantId]
+        [senderId, messageText, messageType, fileUrl, parentMessageId, tenantId]
       );
       return res.status(201).json({
         message: "Message sent to common group successfully",
@@ -358,9 +361,13 @@ export const sendMessage = async (req, res) => {
       });
     }
 
+    if (isNaN(Number(receiverId))) {
+      return res.status(400).json({ error: "Invalid receiver ID format" });
+    }
+
     const receiverResult = await pool.query(
-      "SELECT id FROM users WHERE id = $1 AND school_id = $2 AND is_active = true",
-      [receiverId, req.tenantId]
+      "SELECT id FROM users WHERE id = $1 AND ($2::text IS NULL OR school_id::text = $2::text) AND is_active = true",
+      [receiverId, tenantId]
     );
     if (receiverResult.rows.length === 0) {
       return res.status(404).json({ error: "Receiver not found in your school" });
@@ -369,15 +376,19 @@ export const sendMessage = async (req, res) => {
     const result = await pool.query(
       `INSERT INTO messages (sender_id, receiver_id, message_text, message_type, file_url, parent_message_id, school_id) 
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [senderId, receiverId, messageText, messageType, fileUrl, parentMessageId, req.tenantId]
+      [senderId, receiverId, messageText, messageType, fileUrl, parentMessageId, tenantId]
     );
 
-    // Create notification for receiver
-    await pool.query(
-      `INSERT INTO notifications (user_id, title, message, notification_type, reference_id, reference_type, school_id) 
-       VALUES ($1, 'New Message', $2, 'message', $3, 'message', $4)`,
-      [receiverId, messageText.substring(0, 100), result.rows[0].id, req.tenantId]
-    );
+    // Create notification for receiver (non-blocking)
+    try {
+      await pool.query(
+        `INSERT INTO notifications (user_id, title, message, notification_type, reference_id, reference_type, school_id) 
+         VALUES ($1, 'New Message', $2, 'message', $3, 'message', $4)`,
+        [receiverId, messageText.substring(0, 100), result.rows[0].id, tenantId]
+      );
+    } catch (notifErr) {
+      console.warn("Non-critical notification insert error:", notifErr.message);
+    }
 
     res.status(201).json({
       message: "Message sent successfully",
@@ -394,18 +405,19 @@ export const getMessages = async (req, res) => {
   try {
     const { otherUserId, page = 1, limit = 50 } = req.query;
     const { uid } = req.user;
-    const offset = (page - 1) * limit;
+    const offset = (Number(page) - 1) * Number(limit);
 
     if (!otherUserId) {
       return res.status(400).json({ error: "Other user ID is required" });
     }
 
     // Get current user ID
-    const userResult = await pool.query("SELECT id FROM users WHERE uid = $1", [uid]);
+    const userResult = await pool.query("SELECT u.id, u.school_id FROM users u WHERE u.uid = $1", [uid]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
     const currentUserId = userResult.rows[0].id;
+    const tenantId = req.tenantId || userResult.rows[0].school_id || null;
 
     if (otherUserId === 'common_group') {
       const result = await pool.query(
@@ -417,12 +429,16 @@ export const getMessages = async (req, res) => {
          FROM messages m
          JOIN users sender ON m.sender_id = sender.id
          LEFT JOIN messages parent ON m.parent_message_id = parent.id
-         WHERE m.group_type = 'common_group' AND m.school_id = $3
+         WHERE m.group_type = 'common_group' AND ($3::text IS NULL OR m.school_id::text = $3::text)
          ORDER BY m.created_at DESC
          LIMIT $1 OFFSET $2`,
-        [limit, offset, req.tenantId, currentUserId]
+        [Number(limit), offset, tenantId, currentUserId]
       );
       return res.json({ messages: result.rows.reverse() });
+    }
+
+    if (isNaN(Number(otherUserId))) {
+      return res.json({ messages: [] });
     }
 
     const result = await pool.query(
@@ -437,10 +453,10 @@ export const getMessages = async (req, res) => {
        LEFT JOIN messages parent ON m.parent_message_id = parent.id
        WHERE ((m.sender_id = $1 AND m.receiver_id = $2) 
           OR (m.sender_id = $2 AND m.receiver_id = $1))
-         AND m.school_id = $5
+         AND ($5::text IS NULL OR m.school_id::text = $5::text)
        ORDER BY m.created_at DESC
        LIMIT $3 OFFSET $4`,
-      [currentUserId, otherUserId, limit, offset, req.tenantId]
+      [currentUserId, otherUserId, Number(limit), offset, tenantId]
     );
 
     // Mark messages as read
@@ -449,7 +465,7 @@ export const getMessages = async (req, res) => {
       [otherUserId, currentUserId]
     );
 
-    res.json({ messages: result.rows.reverse() }); // Reverse to show oldest first
+    res.json({ messages: result.rows.reverse() });
   } catch (error) {
     console.error("Get messages error:", error);
     res.status(500).json({ error: "Failed to fetch messages" });
@@ -462,11 +478,12 @@ export const getConversations = async (req, res) => {
     const { uid } = req.user;
 
     // Get current user ID
-    const userResult = await pool.query("SELECT id FROM users WHERE uid = $1", [uid]);
+    const userResult = await pool.query("SELECT u.id, u.school_id FROM users u WHERE u.uid = $1", [uid]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
     const currentUserId = userResult.rows[0].id;
+    const tenantId = req.tenantId || userResult.rows[0].school_id || null;
 
     const result = await pool.query(
       `WITH conversation_users AS (
@@ -486,9 +503,9 @@ export const getConversations = async (req, res) => {
            MAX(m.created_at) as last_message_time,
            COUNT(CASE WHEN m.receiver_id = $1 AND m.is_read = false THEN 1 END) as unread_count
          FROM messages m
-         JOIN users sender ON m.sender_id = sender.id
-         JOIN users receiver ON m.receiver_id = receiver.id
-         WHERE (m.sender_id = $1 OR m.receiver_id = $1) AND m.school_id = $2
+         LEFT JOIN users sender ON m.sender_id = sender.id
+         LEFT JOIN users receiver ON m.receiver_id = receiver.id
+         WHERE (m.sender_id = $1 OR m.receiver_id = $1) AND ($2::text IS NULL OR m.school_id::text = $2::text)
          GROUP BY 
            CASE WHEN m.sender_id = $1 THEN m.receiver_id ELSE m.sender_id END,
            CASE WHEN m.sender_id = $1 THEN receiver.name ELSE sender.name END,
@@ -503,11 +520,12 @@ export const getConversations = async (req, res) => {
          (SELECT message_text FROM messages 
           WHERE ((sender_id = $1 AND receiver_id = cu.other_user_id) 
              OR (sender_id = cu.other_user_id AND receiver_id = $1))
-            AND school_id = $2
+            AND ($2::text IS NULL OR school_id::text = $2::text)
           ORDER BY created_at DESC LIMIT 1) as last_message
        FROM conversation_users cu
+       WHERE cu.other_user_id IS NOT NULL
        ORDER BY cu.last_message_time DESC`,
-      [currentUserId, req.tenantId]
+      [currentUserId, tenantId]
     );
 
     let conversations = result.rows;
@@ -520,8 +538,8 @@ export const getConversations = async (req, res) => {
 
     if (userRole === 'admin' || userRole === 'teacher' || userRole === 'super_admin') {
       const commonGroupMsg = await pool.query(
-        "SELECT message_text, created_at FROM messages WHERE group_type = 'common_group' AND school_id = $1 ORDER BY created_at DESC LIMIT 1",
-        [req.tenantId]
+        "SELECT message_text, created_at FROM messages WHERE group_type = 'common_group' AND ($1::text IS NULL OR school_id::text = $1::text) ORDER BY created_at DESC LIMIT 1",
+        [tenantId]
       );
       
       const commonGroupConv = {
@@ -541,8 +559,8 @@ export const getConversations = async (req, res) => {
           `SELECT u.id, u.name, u.email, u.profile_image_url 
            FROM users u 
            JOIN roles r ON u.role_id = r.id 
-           WHERE r.name = 'teacher' AND u.is_active = true AND u.school_id = $1`,
-          [req.tenantId]
+           WHERE r.name = 'teacher' AND u.is_active = true AND ($1::text IS NULL OR u.school_id::text = $1::text)`,
+          [tenantId]
         );
         
         const existingIds = new Set(conversations.map(c => c.other_user_id));

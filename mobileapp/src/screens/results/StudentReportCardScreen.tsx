@@ -11,7 +11,7 @@ export default function StudentReportCardScreen() {
   useEffect(() => {
     const fetchGrades = async () => {
       try {
-        const response = await apiClient.get(`/api/academic/students/${user?.id}/grades`);
+        const response = await apiClient.get(`/academic/students/${user?.id}/grades`);
         setGrades(response.data);
       } catch (error) {
         console.error(error);

@@ -567,3 +567,5 @@ export const MessageIcon: React.FC<IconProps> = ({ size = 24, color = '#737686',
     />
   </Svg>
 );
+
+

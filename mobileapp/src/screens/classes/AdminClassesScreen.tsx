@@ -15,7 +15,7 @@ export default function AdminClassesScreen() {
   const fetchClasses = async () => {
     setLoading(true);
     try {
-      const response = await apiClient.get('/api/academic/classes');
+      const response = await apiClient.get('/academic/classes');
       setClasses(response.data);
     } catch (error) {
       console.error(error);
@@ -28,8 +28,9 @@ export default function AdminClassesScreen() {
   }, []);
 
   const handleAddClass = async () => {
+    if (!name || !gradeLevel) return;
     try {
-      await apiClient.post('/api/academic/classes', { name, gradeLevel, academicYearId });
+      await apiClient.post('/academic/classes', { name, gradeLevel, academicYearId });
       setModalVisible(false);
       setName('');
       setGradeLevel('');

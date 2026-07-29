@@ -11,7 +11,7 @@ export default function TeacherScheduleScreen() {
   useEffect(() => {
     const fetchSchedule = async () => {
       try {
-        const response = await apiClient.get(`/api/academic/teachers/${user?.id}/schedule`);
+        const response = await apiClient.get(`/academic/teachers/${user?.id}/schedule`);
         setSchedule(response.data);
       } catch (error) {
         console.error(error);

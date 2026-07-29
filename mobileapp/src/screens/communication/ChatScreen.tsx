@@ -10,7 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useRoute, RouteProp } from '@react-navigation/native';
+import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import communicationService from '../../services/communicationService';
 import { useAuth } from '../../contexts/AuthContext';
 import { Message } from '../../types/communication';
@@ -20,7 +20,8 @@ type RoutePropType = RouteProp<CommunicationStackParamList, 'Chat'>;
 
 const ChatScreen: React.FC = () => {
   const route = useRoute<RoutePropType>();
-  const { recipientId } = route.params;
+  const navigation = useNavigation();
+  const { recipientId, recipientName } = route.params;
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
@@ -28,34 +29,59 @@ const ChatScreen: React.FC = () => {
   const listRef = useRef<FlatList<Message>>(null);
 
   useEffect(() => {
-    // Note: getMessages doesn't take params in the current service implementation, but we might want to update the service to pass it.
-    // Assuming backend returns messages based on user/recipient logic, or we'll update the service in a real scenario
+    navigation.setOptions({
+      title: recipientName || 'Chat',
+    });
+  }, [navigation, recipientName]);
+
+  const fetchMessages = () => {
     communicationService
-      .getMessages()
+      .getMessages(recipientId)
       .then((data) => {
         setMessages(Array.isArray(data) ? data : data ?? []);
       })
       .catch((e: Error) => Alert.alert('Error', e.message));
+  };
+
+  useEffect(() => {
+    fetchMessages();
   }, [recipientId]);
 
   const send = async () => {
     if (!text.trim()) {
       return;
     }
+    const messageToSend = text.trim();
     setSending(true);
     try {
-      await communicationService.sendMessage(recipientId, text);
+      const res = await communicationService.sendMessage(recipientId, messageToSend);
       const newMsg: Message = {
-        id: String(Date.now()),
-        senderId: user?.id ?? '',
+        id: res?.id ? String(res.id) : String(Date.now()),
+        senderId: user?.id ? String(user.id) : '',
+        sender_id: user?.id ? String(user.id) : '',
         recipientId,
-        content: text,
+        receiver_id: recipientId,
+        content: messageToSend,
+        message_text: messageToSend,
         createdAt: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        is_mine: true,
       };
       setMessages((prev) => [...prev, newMsg]);
       setText('');
+      // Sync messages with backend
+      setTimeout(() => {
+        communicationService
+          .getMessages(recipientId)
+          .then((data) => {
+            if (Array.isArray(data)) {
+              setMessages(data);
+            }
+          })
+          .catch(() => {});
+      }, 500);
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to send');
+      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to send message');
     } finally {
       setSending(false);
     }
@@ -70,12 +96,21 @@ const ChatScreen: React.FC = () => {
       <FlatList
         ref={listRef}
         data={messages}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, index) => String(item.id || index)}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
         contentContainerStyle={styles.list}
         ListEmptyComponent={<Text style={styles.empty}>No messages yet. Say hello!</Text>}
         renderItem={({ item }) => {
-          const isMine = item.senderId === user?.id;
+          const isMine =
+            item.is_mine !== undefined
+              ? Boolean(item.is_mine)
+              : String(item.senderId || item.sender_id) === String(user?.id);
+          const messageContent = item.content || item.message_text || '';
+          const rawTime = item.createdAt || item.created_at;
+          const timeStr = rawTime
+            ? new Date(rawTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : '';
+
           return (
             <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleTheirs]}>
               <Text
@@ -84,8 +119,18 @@ const ChatScreen: React.FC = () => {
                   isMine ? styles.bubbleTextMine : styles.bubbleTextTheirs,
                 ]}
               >
-                {item.content}
+                {messageContent}
               </Text>
+              {!!timeStr && (
+                <Text
+                  style={[
+                    styles.timeText,
+                    isMine ? styles.timeTextMine : styles.timeTextTheirs,
+                  ]}
+                >
+                  {timeStr}
+                </Text>
+              )}
             </View>
           );
         }}
@@ -94,6 +139,7 @@ const ChatScreen: React.FC = () => {
         <TextInput
           style={styles.input}
           placeholder="Type a message..."
+          placeholderTextColor="#888"
           value={text}
           onChangeText={setText}
           multiline
@@ -107,47 +153,71 @@ const ChatScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  list: { padding: 12 },
+  container: { flex: 1, backgroundColor: '#f8f9ff' },
+  list: { padding: 16 },
   bubble: {
-    maxWidth: '75%',
-    borderRadius: 16,
-    padding: 10,
-    marginBottom: 8,
+    maxWidth: '78%',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 10,
   },
-  bubbleMine: { alignSelf: 'flex-end', backgroundColor: '#6a1b9a' },
-  bubbleTheirs: { alignSelf: 'flex-start', backgroundColor: '#fff', elevation: 1 },
+  bubbleMine: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#6200ea',
+    borderBottomRightRadius: 4,
+  },
+  bubbleTheirs: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#ffffff',
+    borderBottomLeftRadius: 4,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+  },
   bubbleText: { fontSize: 14, lineHeight: 20 },
-  bubbleTextMine: { color: '#fff' },
-  bubbleTextTheirs: { color: '#1a1a1a' },
+  bubbleTextMine: { color: '#ffffff' },
+  bubbleTextTheirs: { color: '#121c28' },
+  timeText: {
+    fontSize: 10,
+    marginTop: 4,
+    alignSelf: 'flex-end',
+  },
+  timeTextMine: { color: 'rgba(255, 255, 255, 0.7)' },
+  timeTextTheirs: { color: '#737686' },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    padding: 8,
-    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#ffffff',
     borderTopWidth: 1,
-    borderTopColor: '#eee',
+    borderTopColor: '#f0f2f8',
   },
   input: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    fontSize: 14,
-    maxHeight: 100,
-    backgroundColor: '#f9f9f9',
-  },
-  sendBtn: {
-    backgroundColor: '#6a1b9a',
-    borderRadius: 20,
+    borderColor: '#e0e2ec',
+    borderRadius: 22,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    marginLeft: 8,
+    fontSize: 14,
+    maxHeight: 100,
+    backgroundColor: '#f8f9ff',
+    color: '#121c28',
   },
-  sendBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  empty: { textAlign: 'center', color: '#999', marginTop: 40 },
+  sendBtn: {
+    backgroundColor: '#6200ea',
+    borderRadius: 22,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    marginLeft: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sendBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 14 },
+  empty: { textAlign: 'center', color: '#737686', marginTop: 40, fontSize: 13 },
 });
 
 export default ChatScreen;

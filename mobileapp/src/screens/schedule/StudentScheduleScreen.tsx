@@ -10,7 +10,7 @@ export default function StudentScheduleScreen() {
     const fetchSchedule = async () => {
       try {
         // Hardcoded class ID as per instructions
-        const response = await apiClient.get(`/api/academic/classes/class-123`);
+        const response = await apiClient.get(`/academic/classes/class-123`);
         // Assuming response.data.schedule or response.data contains the schedule array
         setSchedule(response.data.schedule || []);
       } catch (error) {

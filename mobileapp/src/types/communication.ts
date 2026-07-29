@@ -21,6 +21,11 @@ export interface Message {
   recipientId: string;
   content: string;
   createdAt: string;
+  sender_id?: string | number;
+  receiver_id?: string | number;
+  message_text?: string;
+  created_at?: string;
+  is_mine?: boolean;
 }
 
 export interface PTMMeeting {

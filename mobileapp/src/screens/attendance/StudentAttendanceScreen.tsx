@@ -9,7 +9,7 @@ export default function StudentAttendanceScreen() {
   useEffect(() => {
     const fetchAttendance = async () => {
       try {
-        const response = await apiClient.get('/api/attendance/my-attendance');
+        const response = await apiClient.get('/attendance/my-attendance');
         setAttendance(response.data);
       } catch (error) {
         console.error(error);
