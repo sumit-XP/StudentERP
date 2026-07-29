@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,16 @@ import {
   Platform,
   Alert,
   Modal,
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { DashboardStackParamList } from '../../navigation/features/DashboardNavigator';
 import { useAuth } from '../../contexts/AuthContext';
+import communicationService from '../../services/communicationService';
+import academicService from '../../services/academicService';
+import dashboardService from '../../services/dashboardService';
 import {
   MenuIcon,
   BellIcon,
@@ -32,10 +37,82 @@ import {
 
 type NavProp = StackNavigationProp<DashboardStackParamList, 'Overview'>;
 
+interface ScheduleItem {
+  id?: string;
+  time?: string;
+  ampm?: string;
+  subject?: string;
+  className?: string;
+  room?: string;
+  isLive?: boolean;
+}
+
+interface AnnouncementItem {
+  id: string;
+  title: string;
+  content: string;
+  created_at?: string;
+  date?: string;
+}
+
 const TeacherDashboard: React.FC = () => {
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const navigation = useNavigation<NavProp>();
   const [showDrawer, setShowDrawer] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const [scheduleList, setScheduleList] = useState<ScheduleItem[]>([]);
+  const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
+  const [completionProgress, setCompletionProgress] = useState<number>(78);
+
+  const teacherName = user?.name || 'Prof. Anderson';
+  const teacherRole = user?.email || 'Teacher';
+
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [annRes, schedRes] = await Promise.allSettled([
+        communicationService.getAnnouncements(),
+        user?.id ? academicService.getTeacherSchedule(user.id) : academicService.getClasses(),
+      ]);
+
+      if (annRes.status === 'fulfilled' && Array.isArray(annRes.value)) {
+        setAnnouncements(annRes.value);
+      } else {
+        setAnnouncements([]);
+      }
+
+      if (schedRes.status === 'fulfilled' && Array.isArray(schedRes.value)) {
+        const mappedSchedule = schedRes.value.map((item: any, idx: number) => ({
+          id: item.id || `sched-${idx}`,
+          time: item.start_time || item.time || `${9 + idx}:00`,
+          ampm: item.ampm || (9 + idx < 12 ? 'AM' : 'PM'),
+          subject: item.subject_name || item.name || item.subject || 'Class Lecture',
+          className: item.class_name ? `Grade ${item.class_name}-${item.section || 'A'}` : 'Room 101',
+          room: item.room || 'Room Main',
+          isLive: idx === 0,
+        }));
+        setScheduleList(mappedSchedule);
+      } else {
+        setScheduleList([]);
+      }
+    } catch {
+      // Silently catch network errors for offline fallback
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadData();
+  };
 
   const handleMarkAttendance = () => {
     const parent = navigation.getParent();
@@ -72,13 +149,10 @@ const TeacherDashboard: React.FC = () => {
       {/* TopAppBar */}
       <View style={styles.header}>
         <TouchableOpacity
-          style={styles.menuBtn}
-          activeOpacity={0.6}
+          style={styles.avatarTouchBtn}
+          activeOpacity={0.8}
           onPress={() => setShowDrawer(true)}
         >
-          <MenuIcon size={24} color="#003fb1" />
-        </TouchableOpacity>
-        <View style={styles.headerTitleContainer}>
           <View style={styles.avatarWrapper}>
             <Image
               style={styles.avatar}
@@ -87,8 +161,7 @@ const TeacherDashboard: React.FC = () => {
               }}
             />
           </View>
-          <Text style={styles.headerTitle}>EduCore ERP</Text>
-        </View>
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.notificationBtn}
           activeOpacity={0.6}
@@ -107,11 +180,6 @@ const TeacherDashboard: React.FC = () => {
           onRequestClose={() => setShowDrawer(false)}
         >
           <View style={styles.modalOverlay}>
-            <TouchableOpacity
-              style={styles.drawerOverlayTouch}
-              activeOpacity={1}
-              onPress={() => setShowDrawer(false)}
-            />
             <View style={styles.drawerContentContainer}>
               {/* Drawer Header: User Profile */}
               <View style={styles.drawerHeader}>
@@ -124,8 +192,8 @@ const TeacherDashboard: React.FC = () => {
                   />
                 </View>
                 <View>
-                  <Text style={styles.drawerAdminName}>Prof. Anderson</Text>
-                  <Text style={styles.drawerAdminRole}>Dept of Science</Text>
+                  <Text style={styles.drawerAdminName}>{teacherName}</Text>
+                  <Text style={styles.drawerAdminRole}>{teacherRole}</Text>
                 </View>
               </View>
 
@@ -216,11 +284,20 @@ const TeacherDashboard: React.FC = () => {
                 </TouchableOpacity>
               </View>
             </View>
+            <TouchableOpacity
+              style={styles.drawerOverlayTouch}
+              activeOpacity={1}
+              onPress={() => setShowDrawer(false)}
+            />
           </View>
         </Modal>
       )}
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#003fb1']} />}
+      >
         {/* Quick Actions Bento Grid */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -287,49 +364,38 @@ const TeacherDashboard: React.FC = () => {
             </TouchableOpacity>
           </View>
 
-          {/* Class Card 1 */}
-          <View style={styles.classCard}>
-            <View style={styles.timeBox}>
-              <Text style={styles.timeText}>09:00</Text>
-              <Text style={styles.ampmText}>AM</Text>
+          {loading ? (
+            <ActivityIndicator size="small" color="#003fb1" style={{ marginVertical: 12 }} />
+          ) : scheduleList.length === 0 ? (
+            <View style={styles.classCard}>
+              <Text style={{ color: '#737686', fontSize: 13 }}>No classes scheduled for today.</Text>
             </View>
-            <View style={styles.classInfo}>
-              <View style={styles.classTitleRow}>
-                <Text style={styles.classTitle}>Advanced Mathematics</Text>
-                <View style={styles.liveBadge}>
-                  <Text style={styles.liveText}>LIVE NOW</Text>
+          ) : (
+            scheduleList.map((item, idx) => (
+              <View key={item.id || idx} style={styles.classCard}>
+                <View style={[styles.timeBox, !item.isLive && styles.timeBoxInactive]}>
+                  <Text style={[styles.timeText, !item.isLive && styles.timeTextInactive]}>
+                    {item.time}
+                  </Text>
+                  <Text style={[styles.ampmText, !item.isLive && styles.ampmTextInactive]}>
+                    {item.ampm || 'AM'}
+                  </Text>
                 </View>
+                <View style={styles.classInfo}>
+                  <View style={styles.classTitleRow}>
+                    <Text style={styles.classTitle}>{item.subject}</Text>
+                    {item.isLive && (
+                      <View style={styles.liveBadge}>
+                        <Text style={styles.liveText}>LIVE NOW</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.classMeta}>{`${item.className} • ${item.room}`}</Text>
+                </View>
+                <ChevronRightIcon size={20} color="#c3c5d7" />
               </View>
-              <Text style={styles.classMeta}>Grade 12-A • Room 402</Text>
-            </View>
-            <ChevronRightIcon size={20} color="#c3c5d7" />
-          </View>
-
-          {/* Class Card 2 */}
-          <View style={styles.classCard}>
-            <View style={[styles.timeBox, styles.timeBoxInactive]}>
-              <Text style={[styles.timeText, styles.timeTextInactive]}>11:30</Text>
-              <Text style={[styles.ampmText, styles.ampmTextInactive]}>AM</Text>
-            </View>
-            <View style={styles.classInfo}>
-              <Text style={styles.classTitle}>Physics Workshop</Text>
-              <Text style={styles.classMeta}>Grade 11-C • Lab B</Text>
-            </View>
-            <ChevronRightIcon size={20} color="#c3c5d7" />
-          </View>
-
-          {/* Class Card 3 */}
-          <View style={styles.classCard}>
-            <View style={[styles.timeBox, styles.timeBoxInactive]}>
-              <Text style={[styles.timeText, styles.timeTextInactive]}>02:00</Text>
-              <Text style={[styles.ampmText, styles.ampmTextInactive]}>PM</Text>
-            </View>
-            <View style={styles.classInfo}>
-              <Text style={styles.classTitle}>Staff Meeting</Text>
-              <Text style={styles.classMeta}>Conference Room 1</Text>
-            </View>
-            <ChevronRightIcon size={20} color="#c3c5d7" />
-          </View>
+            ))
+          )}
         </View>
 
         {/* Announcements & Stats */}
@@ -341,60 +407,50 @@ const TeacherDashboard: React.FC = () => {
               <Text style={styles.announcementsTitle}>Announcements</Text>
             </View>
 
-            <View style={styles.announcementItem}>
-              <View style={[styles.announcementBorder, styles.borderBlue]} />
-              <View style={styles.announcementContent}>
-                <Text style={[styles.announcementHeading, styles.textBlue]}>
-                  Annual Science Fair
-                </Text>
-                <Text style={styles.announcementText} numberOfLines={2}>
-                  The registration for the annual science fair starts next week. Please encourage
-                  students...
-                </Text>
-                <Text style={styles.announcementTime}>2 hours ago</Text>
-              </View>
-            </View>
-
-            <View style={styles.announcementItem}>
-              <View style={[styles.announcementBorder, styles.borderGreen]} />
-              <View style={styles.announcementContent}>
-                <Text style={[styles.announcementHeading, styles.textGreen]}>
-                  Grading Policy Update
-                </Text>
-                <Text style={styles.announcementText} numberOfLines={2}>
-                  Revised grading rubrics for semester projects are now available in the resources
-                  section.
-                </Text>
-                <Text style={styles.announcementTime}>Yesterday</Text>
-              </View>
-            </View>
+            {loading ? (
+              <ActivityIndicator size="small" color="#003fb1" style={{ marginVertical: 12 }} />
+            ) : announcements.length === 0 ? (
+              <Text style={{ color: '#737686', fontSize: 13, marginBottom: 12 }}>
+                No active announcements.
+              </Text>
+            ) : (
+              announcements.slice(0, 3).map((item, idx) => (
+                <View key={item.id || idx} style={styles.announcementItem}>
+                  <View
+                    style={[
+                      styles.announcementBorder,
+                      idx % 2 === 0 ? styles.borderBlue : styles.borderGreen,
+                    ]}
+                  />
+                  <View style={styles.announcementContent}>
+                    <Text
+                      style={[
+                        styles.announcementHeading,
+                        idx % 2 === 0 ? styles.textBlue : styles.textGreen,
+                      ]}
+                    >
+                      {item.title}
+                    </Text>
+                    <Text style={styles.announcementText} numberOfLines={2}>
+                      {item.content}
+                    </Text>
+                    <Text style={styles.announcementTime}>
+                      {item.created_at
+                        ? new Date(item.created_at).toLocaleDateString()
+                        : 'Recent'}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            )}
 
             <TouchableOpacity
               style={styles.allAnnouncementsBtn}
               activeOpacity={0.6}
-              onPress={() => Alert.alert('Announcements', 'Opening all announcements.')}
+              onPress={() => navigation.navigate('Announcements' as never)}
             >
               <Text style={styles.allAnnouncementsText}>All Announcements</Text>
             </TouchableOpacity>
-          </View>
-
-          {/* Syllabus Progress Card */}
-          <View style={styles.progressCard}>
-            <Image
-              style={styles.progressBgImage}
-              source={{
-                uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCXl0pYB-P7WqJ-vlqROFZTx8xrETLVBYgIDQ1HksgYuydFqYFJWWbo2YVSTDDBvV6ERKieOScbLiPqaUHbcdjB10vk4I1VQxFkyQhcwvA7AaDX_-QdhBdxcxKQgxwNu7XZSirRQe-ILOxJjXPYHNeNPNKPd6Y21TGhBqsnFSqvGiMAlhnIzuKyRbG9XclpTtnJQ7_dZjgEblq6YWSDSbYx6swkDqbMy0Q0eWliTMfu2ir7pqnubaPl',
-              }}
-            />
-            <View style={styles.progressOverlay} />
-            <View style={styles.progressCardContent}>
-              <Text style={styles.progressLabel}>YOUR PROGRESS</Text>
-              <Text style={styles.progressTitle}>Syllabus Completion</Text>
-              <View style={styles.progressBarBg}>
-                <View style={[styles.progressBarFill, styles.progressBarFill78]} />
-              </View>
-              <Text style={styles.progressStatusText}>78% Complete • On Track</Text>
-            </View>
           </View>
         </View>
       </ScrollView>
@@ -408,54 +464,48 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9ff',
   },
   header: {
-    height: 56,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 6,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderColor: '#c3c5d7',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#121c28',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
+    backgroundColor: 'transparent',
   },
-  menuBtn: {
-    padding: 8,
-  },
-  headerTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+  avatarTouchBtn: {
+    borderRadius: 20,
+    shadowColor: '#121c28',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   avatarWrapper: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     overflow: 'hidden',
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: '#003fb1',
+    backgroundColor: '#ffffff',
   },
   avatar: {
     width: '100%',
     height: '100%',
     resizeMode: 'cover',
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#003fb1',
-  },
   notificationBtn: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#121c28',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   modalOverlay: {
     flex: 1,

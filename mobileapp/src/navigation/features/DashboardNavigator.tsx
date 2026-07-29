@@ -8,6 +8,7 @@ import StudentDashboard from '../../screens/dashboards/StudentDashboard';
 import GradingResultsScreen from '../../screens/assignments/GradingResultsScreen';
 import AssignHomeworkScreen from '../../screens/assignments/AssignHomeworkScreen';
 import CreateAnnouncementScreen from '../../screens/communication/CreateAnnouncementScreen';
+import AnnouncementsScreen from '../../screens/communication/AnnouncementsScreen';
 import AdminResultsOverviewScreen from '../../screens/dashboards/AdminResultsOverviewScreen';
 import AdminAttendanceOverviewScreen from '../../screens/dashboards/AdminAttendanceOverviewScreen';
 import StudentPaymentsScreen from '../../screens/fees/StudentPaymentsScreen';
@@ -23,6 +24,7 @@ export type DashboardStackParamList = {
   GradingResults: undefined;
   AssignHomework: undefined;
   CreateAnnouncement: undefined;
+  Announcements: undefined;
   AdminResultsOverview: undefined;
   AdminAttendanceOverview: undefined;
   StudentPayments: undefined;
@@ -73,6 +75,11 @@ const DashboardNavigator: React.FC = () => {
         name="CreateAnnouncement"
         component={CreateAnnouncementScreen}
         options={{ title: 'Broadcast Announcement' }}
+      />
+      <Stack.Screen
+        name="Announcements"
+        component={AnnouncementsScreen}
+        options={{ title: 'Announcements' }}
       />
       <Stack.Screen
         name="AdminResultsOverview"

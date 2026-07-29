@@ -112,7 +112,9 @@ export const getAnnouncements = async (req, res) => {
       limit = 10 
     } = req.query;
     const { uid } = req.user;
-    const offset = (page - 1) * limit;
+    const parsedPage = parseInt(page, 10) || 1;
+    const parsedLimit = parseInt(limit, 10) || 10;
+    const offset = (parsedPage - 1) * parsedLimit;
 
     // Get user info to filter announcements
     const userResult = await pool.query(
@@ -134,7 +136,8 @@ export const getAnnouncements = async (req, res) => {
       WHERE a.is_active = $1
     `;
     
-    const queryParams = [isActive === 'true'];
+    const activeBool = isActive === 'true' || isActive === true;
+    const queryParams = [activeBool];
     let paramCount = 1;
 
     if (req.tenantId) {
@@ -151,11 +154,13 @@ export const getAnnouncements = async (req, res) => {
         [uid]
       );
       
-      if (studentResult.rows.length > 0) {
+      if (studentResult.rows.length > 0 && studentResult.rows[0].class_id) {
         const studentClassId = studentResult.rows[0].class_id;
         paramCount++;
         query += ` AND (a.target_audience IN ('all', 'students') OR (a.target_audience = 'class_specific' AND a.class_id = $${paramCount}))`;
         queryParams.push(studentClassId);
+      } else {
+        query += ` AND a.target_audience IN ('all', 'students')`;
       }
     } else if (user.role_name === 'parent') {
       // Parents see announcements for 'all', 'parents', or their child's class
@@ -164,11 +169,13 @@ export const getAnnouncements = async (req, res) => {
         [user.id]
       );
       
-      if (childResult.rows.length > 0) {
-        const childClassIds = childResult.rows.map(row => row.class_id);
+      const childClassIds = childResult.rows.map(row => row.class_id).filter(Boolean);
+      if (childClassIds.length > 0) {
         paramCount++;
         query += ` AND (a.target_audience IN ('all', 'parents') OR (a.target_audience = 'class_specific' AND a.class_id = ANY($${paramCount})))`;
         queryParams.push(childClassIds);
+      } else {
+        query += ` AND a.target_audience IN ('all', 'parents')`;
       }
     } else {
       // Teachers and admins see all announcements or filter by parameters
@@ -196,11 +203,11 @@ export const getAnnouncements = async (req, res) => {
     query += ` AND (a.scheduled_at IS NULL OR a.scheduled_at <= CURRENT_TIMESTAMP)`;
 
     query += ` ORDER BY a.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
-    queryParams.push(limit, offset);
+    queryParams.push(parsedLimit, offset);
 
     const result = await pool.query(query, queryParams);
 
-    res.json({ announcements: result.rows });
+    res.json({ success: true, data: result.rows, announcements: result.rows });
   } catch (error) {
     console.error("Get announcements error:", error);
     res.status(500).json({ error: "Failed to fetch announcements" });

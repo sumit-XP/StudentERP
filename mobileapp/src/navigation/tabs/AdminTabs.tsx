@@ -4,13 +4,15 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import DashboardNavigator from '../features/DashboardNavigator';
 import UsersNavigator from '../features/UsersNavigator';
 import FeesNavigator from '../features/FeesNavigator';
+import CommunicationNavigator from '../features/CommunicationNavigator';
 import ProfileNavigator from '../features/ProfileNavigator';
-import { DashboardIcon, UsersIcon, WalletIcon, ProfileIcon } from '../../assets/svgs';
+import { DashboardIcon, UsersIcon, WalletIcon, MessageIcon, ProfileIcon } from '../../assets/svgs';
 
 export type AdminTabsParamList = {
   DashboardTab: undefined;
   UsersTab: undefined;
   FeesTab: undefined;
+  MessagesTab: undefined;
   ProfileTab: undefined;
 };
 
@@ -55,6 +57,8 @@ const AdminTabs: React.FC = () => {
             return <UsersIcon size={size} color={color} />;
           } else if (route.name === 'FeesTab') {
             return <WalletIcon size={size} color={color} />;
+          } else if (route.name === 'MessagesTab') {
+            return <MessageIcon size={size} color={color} />;
           } else if (route.name === 'ProfileTab') {
             return <ProfileIcon size={size} color={color} />;
           }
@@ -75,6 +79,11 @@ const AdminTabs: React.FC = () => {
         name="FeesTab"
         component={FeesNavigator}
         options={{ title: 'Fees', unmountOnBlur: true }}
+      />
+      <Tab.Screen
+        name="MessagesTab"
+        component={CommunicationNavigator}
+        options={{ title: 'Messages', unmountOnBlur: true }}
       />
       <Tab.Screen
         name="ProfileTab"

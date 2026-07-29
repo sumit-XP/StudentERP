@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,10 @@ import {
   SafeAreaView,
   ActivityIndicator,
   TextInput,
+  Platform,
 } from 'react-native';
+import academicService from '../../services/academicService';
+import attendanceService from '../../services/attendanceService';
 import {
   BellIcon,
   CalendarIcon,
@@ -26,51 +29,84 @@ interface StudentRosterItem {
   rollNo: string;
   id: string;
   name: string;
-  avatar: string;
+  avatar?: string;
   status: AttendanceStatus;
 }
 
-const INITIAL_ROSTER: StudentRosterItem[] = [
-  {
-    rollNo: '01',
-    id: 'EDU-2023-045',
-    name: 'Aaron Mitchell',
-    avatar:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuAb1KmSbcZM91b7BIlYcyl6-uJnCU8uJ624gLvluXkD28wzwFtCLEOdrnshcrCDltuUi_U2fDZ6UwqPq324rma9Qt25dnKVWTEgZ-j6XvcQ2MjVP3kxT3kuJR8NX1F09fVwKo7MCG1jeBGs3WlEzAQ_PmCuBlDnGypU76JGsKxdJPk8aRQ5Lx1DwQndGofPs44Fwc7Me6B0lGg9JZ-Jc96mr_gKc5mWThMvsJJzLAd3ZGnCXcCStnGW',
-    status: 'present',
-  },
-  {
-    rollNo: '02',
-    id: 'EDU-2023-098',
-    name: 'Beatrice Silva',
-    avatar:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuBnqyVLySxvWpHo6HAbZ9bDwDMeMtd97okGOfWZcZySTb748mKD9FinWNZchdVz8Fpez-6qiOCeC64Yv-m7ckMKr058NrRJ-uXkYYgRkUs2Le_kt1gniN6AdxSJ-rwfUN0w3YQEjtmRf1v_DNxjtAdwABF8_3dQ27V1eqO3AQAw1oSfikXcpL5tJoI5PETnen4LWxNoRf90OsqBaR21bXJjTUASkKjXdRJaTCAdnlT6O3gJOWisczNr',
-    status: 'present',
-  },
-  {
-    rollNo: '03',
-    id: 'EDU-2023-112',
-    name: 'Charlie Vance',
-    avatar:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuA_UTwFdW-EhXq0Utt6incuS5EsxEAhGcusnSO6f0wMM7CZr8wDdPyEhwdb_otywcdW6zZzFur0i-UN_iEBtjTzRgoe_n0MFxXYCSXk3lPMol6tUT_UD1LhZjYZx5-_lx8DOfFbT0DzRmTJlffuP8vHzExkJo6oqRtIJ45hNbRVurfWWsFkHtypqKid_pgWQqkXPkBRoYFUm7_dFcQfH-sso-tr3ELPKxqgU1kx62zIItlgd7Vu9c2J',
-    status: 'present',
-  },
-  {
-    rollNo: '04',
-    id: 'EDU-2023-156',
-    name: 'Diana Prince',
-    avatar:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuDiWekr9AXz1hxyynIEpNRqhuOgQOdljLOmQ3IXhbd_wK8sZjzdxSwuf5dvbo3rpc_rJte3sqUHm22Rw-7jZ94B_-jP2rzElQNPZuYot44UdhdwCvOiHih3AhyiVtYllXw7LPJaoIpvtrnEhicP2tUJqcluotHb9ockjROixPRllycnWPBKqJgJDt4GXLHqGyRyZHM1Wm-Pbif3E-rTJ1bnXhxaSnP_IdBHxoPuSjaF2oY8qVjZDOT3',
-    status: 'present',
-  },
-];
+interface ClassItem {
+  id: string;
+  name: string;
+  section?: string;
+}
 
 const MarkAttendanceScreen: React.FC = () => {
-  const [selectedClass, setSelectedClass] = useState('Grade 10-B');
-  const [date, setDate] = useState('2023-10-24');
-  const [roster, setRoster] = useState<StudentRosterItem[]>(INITIAL_ROSTER);
+  const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState<string>('');
+  const [selectedClassName, setSelectedClassName] = useState<string>('Select Class');
+  const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [roster, setRoster] = useState<StudentRosterItem[]>([]);
+  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [showClassDropdown, setShowClassDropdown] = useState(false);
+
+  // Load Classes list on mount
+  useEffect(() => {
+    academicService
+      .getClasses()
+      .then((clsList: any[]) => {
+        if (Array.isArray(clsList) && clsList.length > 0) {
+          setClasses(clsList);
+          const first = clsList[0];
+          setSelectedClassId(first.id);
+          setSelectedClassName(`${first.name}${first.section ? `-${first.section}` : ''}`);
+        }
+      })
+      .catch(() => {
+        // Handled silently
+      });
+  }, []);
+
+  // Fetch student roster and existing attendance when class or date changes
+  const fetchRoster = useCallback(async () => {
+    if (!selectedClassId) return;
+    try {
+      setLoading(true);
+      const [studentsRes, attRes] = await Promise.allSettled([
+        academicService.getStudents({ classId: selectedClassId }),
+        attendanceService.getAttendanceByClassAndDate(selectedClassId, date),
+      ]);
+
+      const studentsList = studentsRes.status === 'fulfilled' && Array.isArray(studentsRes.value) ? studentsRes.value : [];
+      const existingAttendance = attRes.status === 'fulfilled' && attRes.value?.attendance && Array.isArray(attRes.value.attendance)
+        ? attRes.value.attendance
+        : [];
+
+      const attMap = new Map<string, AttendanceStatus>();
+      existingAttendance.forEach((record: any) => {
+        if (record.student_id) {
+          attMap.set(record.student_id, record.status === 'absent' ? 'absent' : 'present');
+        }
+      });
+
+      const formattedRoster: StudentRosterItem[] = studentsList.map((stu: any, idx: number) => ({
+        id: stu.id,
+        rollNo: stu.roll_number ? String(stu.roll_number).padStart(2, '0') : String(idx + 1).padStart(2, '0'),
+        name: stu.user_name || stu.name || `Student ${idx + 1}`,
+        avatar: stu.avatar || 'https://lh3.googleusercontent.com/aida-public/AB6AXuAb1KmSbcZM91b7BIlYcyl6-uJnCU8uJ624gLvluXkD28wzwFtCLEOdrnshcrCDltuUi_U2fDZ6UwqPq324rma9Qt25dnKVWTEgZ-j6XvcQ2MjVP3kxT3kuJR8NX1F09fVwKo7MCG1jeBGs3WlEzAQ_PmCuBlDnGypU76JGsKxdJPk8aRQ5Lx1DwQndGofPs44Fwc7Me6B0lGg9JZ-Jc96mr_gKc5mWThMvsJJzLAd3ZGnCXcCStnGW',
+        status: attMap.get(stu.id) || 'present',
+      }));
+
+      setRoster(formattedRoster);
+    } catch {
+      setRoster([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedClassId, date]);
+
+  useEffect(() => {
+    fetchRoster();
+  }, [fetchRoster]);
 
   const toggleStatus = (studentId: string) => {
     setRoster((prev) =>
@@ -85,16 +121,33 @@ const MarkAttendanceScreen: React.FC = () => {
   };
 
   const handleSubmit = async () => {
+    if (!selectedClassId) {
+      Alert.alert('Selection Error', 'Please select a valid class first.');
+      return;
+    }
+
+    if (roster.length === 0) {
+      Alert.alert('Roster Empty', 'No students found in this class to mark attendance.');
+      return;
+    }
+
     setSubmitting(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const attendanceData = roster.map((s) => ({
+        studentId: s.id,
+        classId: selectedClassId,
+        date: date,
+        status: s.status,
+      }));
+
+      await attendanceService.markAttendance(attendanceData);
       Alert.alert(
         'Attendance Submitted',
-        `Successfully marked attendance for ${selectedClass} on ${date}.`,
-        [{ text: 'Great' }],
+        `Successfully submitted attendance for ${selectedClassName} on ${date}.`,
+        [{ text: 'OK' }],
       );
-    } catch {
-      Alert.alert('Error', 'Failed to submit attendance');
+    } catch (err: any) {
+      Alert.alert('Submission Error', err?.message || 'Failed to submit attendance to server.');
     } finally {
       setSubmitting(false);
     }
@@ -103,6 +156,7 @@ const MarkAttendanceScreen: React.FC = () => {
   // Stats calculation
   const totalStudents = roster.length;
   const markedPresent = roster.filter((s) => s.status === 'present').length;
+  const percentPresent = totalStudents > 0 ? Math.round((markedPresent / totalStudents) * 100) : 0;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -151,31 +205,41 @@ const MarkAttendanceScreen: React.FC = () => {
               onPress={() => setShowClassDropdown(!showClassDropdown)}
               activeOpacity={0.7}
             >
-              <Text style={styles.selectorText}>{selectedClass}</Text>
+              <Text style={styles.selectorText}>{selectedClassName}</Text>
               <ChevronDownIcon size={20} color="#737686" />
             </TouchableOpacity>
 
             {showClassDropdown && (
               <View style={styles.dropdownMenu}>
-                {['Grade 10-B', 'Grade 10-A', 'Grade 11-C', 'Grade 9-D'].map((item) => (
-                  <TouchableOpacity
-                    key={item}
-                    style={styles.dropdownItem}
-                    onPress={() => {
-                      setSelectedClass(item);
-                      setShowClassDropdown(false);
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.dropdownItemText,
-                        selectedClass === item && styles.dropdownItemActive,
-                      ]}
-                    >
-                      {item}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {classes.length === 0 ? (
+                  <View style={styles.dropdownItem}>
+                    <Text style={styles.dropdownItemText}>No classes found</Text>
+                  </View>
+                ) : (
+                  classes.map((cls) => {
+                    const cName = `${cls.name}${cls.section ? `-${cls.section}` : ''}`;
+                    return (
+                      <TouchableOpacity
+                        key={cls.id}
+                        style={styles.dropdownItem}
+                        onPress={() => {
+                          setSelectedClassId(cls.id);
+                          setSelectedClassName(cName);
+                          setShowClassDropdown(false);
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.dropdownItemText,
+                            selectedClassId === cls.id && styles.dropdownItemActive,
+                          ]}
+                        >
+                          {cName}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
               </View>
             )}
           </View>
@@ -209,12 +273,9 @@ const MarkAttendanceScreen: React.FC = () => {
                 <Text style={styles.statsSubtext}>STUDENTS PRESENT</Text>
               </View>
 
-              {/* Simulated circle progress indicator */}
               <View style={styles.progressCircle}>
                 <View style={styles.innerCircle}>
-                  <Text style={styles.progressPercent}>
-                    {Math.round((markedPresent / totalStudents) * 100)}%
-                  </Text>
+                  <Text style={styles.progressPercent}>{percentPresent}%</Text>
                 </View>
               </View>
             </View>
@@ -233,49 +294,55 @@ const MarkAttendanceScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
-        {/* Student Roster Table/List */}
-        <View style={styles.rosterContainer}>
-          {roster.map((student) => (
-            <TouchableOpacity
-              key={student.id}
-              style={styles.rosterItem}
-              activeOpacity={0.8}
-              onPress={() => toggleStatus(student.id)}
-            >
-              {/* Student details */}
-              <View style={styles.studentDetailsCol}>
-                <Text style={styles.rollNoText}>{student.rollNo}</Text>
-                <View style={styles.studentAvatarWrapper}>
-                  <Image style={styles.studentAvatar} source={{ uri: student.avatar }} />
+        {/* Student Roster List */}
+        {loading ? (
+          <ActivityIndicator size="large" color="#003fb1" style={{ marginVertical: 32 }} />
+        ) : roster.length === 0 ? (
+          <View style={{ padding: 24, alignItems: 'center' }}>
+            <Text style={{ color: '#737686', fontSize: 14 }}>No students enrolled in this class.</Text>
+          </View>
+        ) : (
+          <View style={styles.rosterContainer}>
+            {roster.map((student) => (
+              <TouchableOpacity
+                key={student.id}
+                style={styles.rosterItem}
+                activeOpacity={0.8}
+                onPress={() => toggleStatus(student.id)}
+              >
+                <View style={styles.studentDetailsCol}>
+                  <Text style={styles.rollNoText}>{student.rollNo}</Text>
+                  <View style={styles.studentAvatarWrapper}>
+                    <Image style={styles.studentAvatar} source={{ uri: student.avatar }} />
+                  </View>
+                  <View style={styles.studentMeta}>
+                    <Text style={styles.studentName} numberOfLines={1}>
+                      {student.name}
+                    </Text>
+                    <Text style={styles.studentIdText}>{student.id}</Text>
+                  </View>
                 </View>
-                <View style={styles.studentMeta}>
-                  <Text style={styles.studentName} numberOfLines={1}>
-                    {student.name}
-                  </Text>
-                  <Text style={styles.studentIdText}>{student.id}</Text>
-                </View>
-              </View>
 
-              {/* Checkbox Tick toggler */}
-              <View style={styles.checkboxWrapper}>
-                <View
-                  style={[
-                    styles.checkboxCircle,
-                    student.status === 'present' && styles.checkboxCircleChecked,
-                  ]}
-                >
-                  {student.status === 'present' && <CheckIcon size={14} color="#ffffff" />}
+                <View style={styles.checkboxWrapper}>
+                  <View
+                    style={[
+                      styles.checkboxCircle,
+                      student.status === 'present' && styles.checkboxCircleChecked,
+                    ]}
+                  >
+                    {student.status === 'present' && <CheckIcon size={14} color="#ffffff" />}
+                  </View>
                 </View>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         {/* Submit Button Area */}
         <TouchableOpacity
           style={styles.submitButton}
           onPress={handleSubmit}
-          disabled={submitting}
+          disabled={submitting || roster.length === 0}
           activeOpacity={0.9}
         >
           {submitting ? (

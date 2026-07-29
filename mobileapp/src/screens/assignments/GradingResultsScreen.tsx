@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../contexts/AuthContext';
+import academicService from '../../services/academicService';
 import {
   MenuIcon,
   BellIcon,
@@ -85,11 +86,42 @@ const INITIAL_STUDENTS: StudentMarksItem[] = [
 const GradingResultsScreen: React.FC = () => {
   const { signOut } = useAuth();
   const navigation = useNavigation();
-  const [students, setStudents] = useState<StudentMarksItem[]>(INITIAL_STUDENTS);
+  const [students, setStudents] = useState<StudentMarksItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showDrawer, setShowDrawer] = useState(false);
   const [filterMissingOnly, setFilterMissingOnly] = useState(false);
   const [sortByRank, setSortByRank] = useState(false);
+
+  useEffect(() => {
+    academicService
+      .getStudents()
+      .then((data: any[]) => {
+        if (Array.isArray(data) && data.length > 0) {
+          const mapped: StudentMarksItem[] = data.map((stu: any, idx: number) => {
+            const nameParts = (stu.user_name || stu.name || `Student ${idx + 1}`).split(' ');
+            const initials = nameParts.length >= 2
+              ? `${nameParts[0][0]}${nameParts[1][0]}`.toUpperCase()
+              : `${nameParts[0][0] || 'S'}`.toUpperCase();
+            return {
+              id: stu.id,
+              name: stu.user_name || stu.name || `Student ${idx + 1}`,
+              initials,
+              score: '',
+              status: 'Missing',
+              bgClass: '#ffdad6',
+            };
+          });
+          setStudents(mapped);
+        } else {
+          setStudents(INITIAL_STUDENTS);
+        }
+      })
+      .catch(() => {
+        setStudents(INITIAL_STUDENTS);
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   const handleScoreChange = (id: string, text: string) => {
     setStudents((prev) =>

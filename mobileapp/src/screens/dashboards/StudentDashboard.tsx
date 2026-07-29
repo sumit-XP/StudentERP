@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,11 +12,16 @@ import {
   Dimensions,
   Modal,
   TouchableWithoutFeedback,
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { DashboardStackParamList } from '../../navigation/features/DashboardNavigator';
 import { useAuth } from '../../contexts/AuthContext';
+import attendanceService from '../../services/attendanceService';
+import assignmentService from '../../services/assignmentService';
+import communicationService from '../../services/communicationService';
 import {
   MenuIcon,
   BellIcon,
@@ -62,6 +67,55 @@ const StudentDashboard: React.FC = () => {
   const drawerAnim = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const overlayAnim = useRef(new Animated.Value(0)).current;
 
+  // Backend state
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [attendanceVal, setAttendanceVal] = useState('94%');
+  const [homeworkList, setHomeworkList] = useState<any[]>([]);
+  const [announcementList, setAnnouncementList] = useState<any[]>([]);
+
+  const fetchStudentData = useCallback(async () => {
+    try {
+      const [attData, assignData, commData] = await Promise.allSettled([
+        attendanceService.getMyAttendance(),
+        assignmentService.getAssignments(),
+        communicationService.getAnnouncements(),
+      ]);
+
+      if (attData.status === 'fulfilled' && attData.value) {
+        const val = attData.value;
+        if (typeof val.percentage === 'number') {
+          setAttendanceVal(`${val.percentage}%`);
+        } else if (Array.isArray(val) && val.length > 0) {
+          const present = val.filter((a: any) => a.status === 'present').length;
+          setAttendanceVal(`${Math.round((present / val.length) * 100)}%`);
+        }
+      }
+
+      if (assignData.status === 'fulfilled' && Array.isArray(assignData.value)) {
+        setHomeworkList(assignData.value);
+      }
+
+      if (commData.status === 'fulfilled' && Array.isArray(commData.value)) {
+        setAnnouncementList(commData.value);
+      }
+    } catch {
+      // Fallback handled smoothly
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStudentData();
+  }, [fetchStudentData]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchStudentData();
+  };
+
   const openDrawer = () => {
     setDrawerOpen(true);
     Animated.parallel([
@@ -103,7 +157,7 @@ const StudentDashboard: React.FC = () => {
     if (parent) {
       parent.navigate('AssignmentsTab');
     } else {
-      Alert.alert('Assignments', 'Navigating to Assignments Directory.');
+      navigation.navigate('Assignments' as never);
     }
     closeDrawer();
   };
@@ -119,7 +173,7 @@ const StudentDashboard: React.FC = () => {
       label: 'Schedule',
       onPress: () => {
         closeDrawer();
-        Alert.alert('Schedule', 'Opening schedule...');
+        navigation.navigate('StudentSchedule');
       },
     },
     {
@@ -127,13 +181,13 @@ const StudentDashboard: React.FC = () => {
       label: 'Grades',
       onPress: () => {
         closeDrawer();
-        Alert.alert('Grades', 'Opening grades...');
+        navigation.navigate('StudentReportCard');
       },
     },
     {
       icon: <AssignmentIcon size={18} color="#003fb1" />,
       label: 'Assignments',
-      badge: '3',
+      badge: homeworkList.length ? `${homeworkList.length}` : undefined,
       onPress: handleViewAssignments,
     },
     {
@@ -141,7 +195,7 @@ const StudentDashboard: React.FC = () => {
       label: 'Attendance',
       onPress: () => {
         closeDrawer();
-        Alert.alert('Attendance', 'Opening attendance...');
+        navigation.navigate('StudentAttendance');
       },
     },
     {
@@ -155,7 +209,7 @@ const StudentDashboard: React.FC = () => {
       label: 'Messages',
       onPress: () => {
         closeDrawer();
-        Alert.alert('Messages', 'Opening messages...');
+        navigation.navigate('Messaging');
       },
     },
     {
@@ -163,7 +217,7 @@ const StudentDashboard: React.FC = () => {
       label: 'Help & Support',
       onPress: () => {
         closeDrawer();
-        Alert.alert('Help', 'Opening help center...');
+        Alert.alert('Help Center', 'EduCore Student Support: support@educore.edu');
       },
     },
   ];
@@ -265,15 +319,11 @@ const StudentDashboard: React.FC = () => {
 
       {/* ===== TOP BAR ===== */}
       <View style={styles.headerBar}>
-        <View style={styles.headerProfile}>
-          <TouchableOpacity style={styles.hamburgerBtn} onPress={openDrawer} activeOpacity={0.7}>
-            <MenuIcon size={24} color="#003fb1" />
-          </TouchableOpacity>
+        <TouchableOpacity onPress={openDrawer} activeOpacity={0.8} style={styles.avatarTouchBtn}>
           <View style={styles.avatarWrapper}>
             <Image style={styles.avatarImg} source={{ uri: STUDENT_AVATAR }} />
           </View>
-          <Text style={styles.headerText}>EduCore ERP</Text>
-        </View>
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.notifBtn}
           activeOpacity={0.6}
@@ -287,11 +337,17 @@ const StudentDashboard: React.FC = () => {
       </View>
 
       {/* ===== MAIN CONTENT ===== */}
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#003fb1']} />
+        }
+      >
         {/* Welcome Section */}
         <View style={styles.welcomeSection}>
           <Text style={styles.welcomeGreeting}>Good morning 👋</Text>
-          <Text style={styles.welcomeTitle}>Hello, {user?.name?.split(' ')[0] || 'Alex'}</Text>
+          <Text style={styles.welcomeTitle}>Hello, {user?.name?.split(' ')[0] || 'Student'}</Text>
           <Text style={styles.welcomeSubtitle}>Your academic journey is looking great today.</Text>
         </View>
 
@@ -302,49 +358,17 @@ const StudentDashboard: React.FC = () => {
               <Text style={styles.statLabelGreen}>Attendance</Text>
               <FactCheckIcon size={18} color="#006c4a" />
             </View>
-            <Text style={styles.statVal}>94%</Text>
-            <Text style={styles.statDesc}>Last 30 days</Text>
+            <Text style={styles.statVal}>{attendanceVal}</Text>
+            <Text style={styles.statDesc}>Overall Tracked</Text>
           </View>
 
           <View style={styles.statCard}>
             <View style={styles.statHeader}>
-              <Text style={styles.statLabelBlue}>GPA</Text>
-              <SchoolIcon size={18} color="#003fb1" />
+              <Text style={styles.statLabelBlue}>Homework</Text>
+              <AssignmentIcon size={18} color="#003fb1" />
             </View>
-            <Text style={styles.statVal}>3.8</Text>
-            <Text style={styles.statDesc}>Cumulative</Text>
-          </View>
-        </View>
-
-        {/* Performance Card */}
-        <View style={styles.performanceCard}>
-          <Text style={styles.sectionTitle}>Performance</Text>
-          <View style={styles.progressContainer}>
-            <View style={styles.progressBarRow}>
-              <Text style={styles.progressBarLabel}>Mathematics</Text>
-              <Text style={styles.progressBarGrade}>A</Text>
-            </View>
-            <View style={styles.progressBarBg}>
-              <View style={[styles.progressBarFill, styles.fillMath]} />
-            </View>
-          </View>
-          <View style={styles.progressContainer}>
-            <View style={styles.progressBarRow}>
-              <Text style={styles.progressBarLabel}>Physics</Text>
-              <Text style={styles.progressBarGrade}>A-</Text>
-            </View>
-            <View style={styles.progressBarBg}>
-              <View style={[styles.progressBarFill, styles.fillPhysics]} />
-            </View>
-          </View>
-          <View style={styles.progressContainer}>
-            <View style={styles.progressBarRow}>
-              <Text style={styles.progressBarLabel}>English Lit.</Text>
-              <Text style={styles.progressBarGrade}>B+</Text>
-            </View>
-            <View style={styles.progressBarBg}>
-              <View style={[styles.progressBarFill, styles.fillEnglish]} />
-            </View>
+            <Text style={styles.statVal}>{homeworkList.length}</Text>
+            <Text style={styles.statDesc}>Active Tasks</Text>
           </View>
         </View>
 
@@ -358,177 +382,76 @@ const StudentDashboard: React.FC = () => {
           </View>
 
           <View style={styles.homeworkList}>
-            <View style={styles.homeworkRow}>
-              <View style={styles.hwIconBox}>
-                <CalculatorIcon size={20} color="#003fb1" />
-              </View>
-              <View style={styles.hwMeta}>
-                <Text style={styles.hwTitle}>Trigonometry Quiz</Text>
-                <Text style={styles.hwDue}>Due Tomorrow, 10:00 AM</Text>
-              </View>
-              <View style={styles.badgeRed}>
-                <Text style={styles.badgeRedText}>High</Text>
-              </View>
-            </View>
+            {loading ? (
+              <ActivityIndicator color="#003fb1" style={{ marginVertical: 16 }} />
+            ) : homeworkList.length === 0 ? (
+              <Text style={{ color: '#737686', fontSize: 13, paddingVertical: 8 }}>
+                No active homework assignments right now.
+              </Text>
+            ) : (
+              homeworkList.slice(0, 3).map((item: any, idx: number) => {
+                const title = item.title || 'Assignment';
+                const due = item.due_date || item.dueDate
+                  ? new Date(item.due_date || item.dueDate).toLocaleDateString()
+                  : 'No due date';
+                const isHigh = item.priority === 'high' || item.is_urgent;
 
-            <View style={styles.homeworkRow}>
-              <View style={styles.hwIconBox}>
-                <FlaskIcon size={20} color="#003fb1" />
-              </View>
-              <View style={styles.hwMeta}>
-                <Text style={styles.hwTitle}>Lab Report</Text>
-                <Text style={styles.hwDue}>Due Friday, 3:00 PM</Text>
-              </View>
-              <View style={styles.badgeGrey}>
-                <Text style={styles.badgeGreyText}>Normal</Text>
-              </View>
-            </View>
-
-            <View style={styles.homeworkRow}>
-              <View style={styles.hwIconBox}>
-                <BookOpenPageIcon size={20} color="#003fb1" />
-              </View>
-              <View style={styles.hwMeta}>
-                <Text style={styles.hwTitle}>Literature Essay</Text>
-                <Text style={styles.hwDue}>Due Oct 15</Text>
-              </View>
-              <View style={styles.badgeGrey}>
-                <Text style={styles.badgeGreyText}>Normal</Text>
-              </View>
-            </View>
+                return (
+                  <TouchableOpacity
+                    key={item.id || idx}
+                    style={styles.homeworkRow}
+                    activeOpacity={0.7}
+                    onPress={handleViewAssignments}
+                  >
+                    <View style={styles.hwIconBox}>
+                      <AssignmentIcon size={20} color="#003fb1" />
+                    </View>
+                    <View style={styles.hwMeta}>
+                      <Text style={styles.hwTitle} numberOfLines={1}>{title}</Text>
+                      <Text style={styles.hwDue}>Due {due}</Text>
+                    </View>
+                    <View style={isHigh ? styles.badgeRed : styles.badgeGrey}>
+                      <Text style={isHigh ? styles.badgeRedText : styles.badgeGreyText}>
+                        {item.subject_name || item.subject || (isHigh ? 'High' : 'Active')}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            )}
           </View>
         </View>
 
         {/* Latest Announcements */}
         <View style={styles.bentoSection}>
-          <Text style={styles.sectionTitle}>Latest Announcements</Text>
-          <View style={styles.announcementBannerCard}>
-            <Image
-              style={styles.announcementImg}
-              source={{
-                uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCvuJ2ZRA3OnR5lv4EF5L7o2tmc1OLaMDDOOhCEcmkq4llbP8GGzNQmzQr55BpWg4ALr-Kpg8Vf6OTq_sAV6WUv5mp7B33o9Q70iLngDBphkDsd-jrM9w_nyyRHXy8ma3OB3qALnndCxv7oSTqay188xqLhot0IsvSwgHTOlsUokwWm39IPO2yVuGOBvJgZDny6OhCndUPqx3fdtfzMzkWMZ9GOp3SSMPtbW4rYle3CbSTHQHfnlkbe',
-              }}
-            />
-            <View style={styles.bannerOverlay} />
-            <View style={styles.bannerContent}>
-              <View style={styles.bannerBadge}>
-                <Text style={styles.bannerBadgeText}>Campus Event</Text>
-              </View>
-              <Text style={styles.bannerTitle}>Annual Science Fair 2024</Text>
-              <Text style={styles.bannerDesc} numberOfLines={2}>
-                Registration is now open for all students interested in showcasing their STEM
-                projects this year.
-              </Text>
-              <View style={styles.bannerTimeRow}>
-                <ClockOutlineIcon size={12} color="rgba(255,255,255,0.7)" />
-                <Text style={styles.bannerTimeText}>Posted 2 hours ago</Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.infoAlertBox}>
-            <InformationOutlineIcon size={18} color="#723b00" />
-            <View style={styles.alertMeta}>
-              <Text style={styles.alertTitle}>Delayed Start - Tuesday</Text>
-              <Text style={styles.alertDesc}>
-                Due to scheduled maintenance, classes will begin at 10:00 AM this Tuesday.
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Parent Portal Section */}
-        <View style={styles.parentPortalContainer}>
           <View style={styles.cardHeaderRow}>
-            <View style={styles.parentHeaderTitle}>
-              <ParentCircleIcon size={22} color="#003fb1" />
-              <Text style={styles.parentTitleText}>Parent Portal</Text>
-            </View>
-            <View style={styles.overdueBadge}>
-              <AlertCircleIcon size={14} color="#ba1a1a" />
-              <Text style={styles.overdueBadgeText}>Pending: $1,250.00</Text>
-            </View>
-          </View>
-          <Text style={styles.parentSubtitleText}>
-            Manage tuition fees and financial records securely.
-          </Text>
-
-          <View style={styles.feeDetailsCard}>
-            <Text style={styles.feeCardSectionTitle}>Pending Fees</Text>
-            <View style={styles.feeItemRow}>
-              <View>
-                <Text style={styles.feeItemTitle}>Tuition Fee - Quarter 3</Text>
-                <Text style={styles.feeItemDue}>Due: Oct 15, 2024</Text>
-              </View>
-              <View style={styles.feeAmountBlock}>
-                <Text style={styles.feeItemValRed}>$1,100.00</Text>
-                <View style={styles.overdueBadgeMini}>
-                  <Text style={styles.overdueBadgeMiniText}>Overdue</Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.feeItemRow}>
-              <View>
-                <Text style={styles.feeItemTitle}>Laboratory Charges</Text>
-                <Text style={styles.feeItemDue}>Due: Nov 01, 2024</Text>
-              </View>
-              <Text style={styles.feeItemVal}>$150.00</Text>
-            </View>
-
-            <TouchableOpacity
-              style={styles.portalPayBtn}
-              onPress={handlePayNow}
-              activeOpacity={0.8}
-            >
-              <CreditCardOutlineIcon size={18} color="#ffffff" />
-              <Text style={styles.portalPayBtnText}>Pay Now</Text>
+            <Text style={styles.sectionTitle}>Latest Announcements</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Announcements' as never)} activeOpacity={0.6}>
+              <Text style={styles.headerLink}>View All</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.historyCard}>
-            <Text style={styles.feeCardSectionTitle}>Payment History</Text>
-            <View style={styles.historyItemRow}>
-              <View>
-                <Text style={styles.historyItemTitle}>#INV-2024-08</Text>
-                <Text style={styles.historyItemDate}>Aug 12, 2024</Text>
+          {loading ? (
+            <ActivityIndicator color="#003fb1" style={{ marginVertical: 16 }} />
+          ) : announcementList.length === 0 ? (
+            <View style={styles.infoAlertBox}>
+              <InformationOutlineIcon size={18} color="#723b00" />
+              <View style={styles.alertMeta}>
+                <Text style={styles.alertTitle}>School Bulletins</Text>
+                <Text style={styles.alertDesc}>No new announcements posted today.</Text>
               </View>
-              <View style={styles.historyStatusBlock}>
-                <Text style={styles.historyAmount}>$1,100.00</Text>
-                <View style={styles.successBadge}>
-                  <Text style={styles.successBadgeText}>Successful</Text>
+            </View>
+          ) : (
+            announcementList.slice(0, 2).map((ann: any, idx: number) => (
+              <View key={ann.id || idx} style={styles.infoAlertBox}>
+                <InformationOutlineIcon size={18} color="#003fb1" />
+                <View style={styles.alertMeta}>
+                  <Text style={styles.alertTitle}>{ann.title}</Text>
+                  <Text style={styles.alertDesc} numberOfLines={2}>{ann.content}</Text>
                 </View>
               </View>
-            </View>
-
-            <View style={styles.historyItemRow}>
-              <View>
-                <Text style={styles.historyItemTitle}>#INV-2024-05</Text>
-                <Text style={styles.historyItemDate}>May 05, 2024</Text>
-              </View>
-              <View style={styles.historyStatusBlock}>
-                <Text style={styles.historyAmount}>$1,100.00</Text>
-                <View style={styles.successBadge}>
-                  <Text style={styles.successBadgeText}>Successful</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-
-          {/* Debit Card Graphic */}
-          <View style={styles.debitCardGraphic}>
-            <View style={styles.debitCardHeader}>
-              <ContactlessPayIcon size={32} color="#ffffff" />
-              <View style={styles.cardBrand}>
-                <Text style={styles.brandTitle}>EduCore Pay</Text>
-                <Text style={styles.brandSub}>Premium</Text>
-              </View>
-            </View>
-            <View style={styles.debitCardFooter}>
-              <Text style={styles.cardHolder}>{(user?.name || 'ALEX JOHNSON').toUpperCase()}</Text>
-              <Text style={styles.cardNumber}>**** **** **** 4001</Text>
-            </View>
-          </View>
+            ))
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -684,28 +607,45 @@ const styles = StyleSheet.create({
 
   // ===== HEADER =====
   headerBar: {
-    height: 56,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 6,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderColor: '#c3c5d7',
+    backgroundColor: 'transparent',
   },
-  headerProfile: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  hamburgerBtn: { padding: 4 },
+  avatarTouchBtn: {
+    borderRadius: 20,
+    shadowColor: '#121c28',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
   avatarWrapper: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     overflow: 'hidden',
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: '#003fb1',
+    backgroundColor: '#ffffff',
   },
   avatarImg: { width: '100%', height: '100%' },
-  headerText: { fontSize: 16, fontWeight: '700', color: '#003fb1' },
-  notifBtn: { padding: 8, borderRadius: 9999 },
+  notifBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#121c28',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
   notifBadgeWrapper: { position: 'relative' },
   notifDot: {
     position: 'absolute',

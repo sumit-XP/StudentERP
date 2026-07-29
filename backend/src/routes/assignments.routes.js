@@ -38,7 +38,7 @@ router.put("/submissions/:submissionId/grade", verifyToken, checkRole(["admin", 
 
 // ==================== ASSIGNMENTS ====================
 router.post("/", verifyToken, checkRole(["admin", "teacher"]), createAssignment);
-router.get("/", verifyToken, checkRole(["admin", "teacher"]), getAssignments);
+router.get("/", verifyToken, checkRole(["admin", "teacher", "student", "parent"]), getAssignments);
 // /:id MUST come last — it would swallow any named route above it
 router.get("/:id", verifyToken, getAssignmentDetails);
 router.put("/:id", verifyToken, checkRole(["admin", "teacher"]), updateAssignment);

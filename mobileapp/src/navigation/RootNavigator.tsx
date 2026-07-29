@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -9,6 +9,8 @@ import TeacherTabs from './tabs/TeacherTabs';
 import StudentTabs from './tabs/StudentTabs';
 import ParentTabs from './tabs/ParentTabs';
 import AnimatedSplashScreen from '../screens/AnimatedSplashScreen';
+import PrivacyPolicyScreen from '../screens/legal/PrivacyPolicyScreen';
+import TermsOfUseScreen from '../screens/legal/TermsOfUseScreen';
 
 const Stack = createStackNavigator();
 
@@ -16,17 +18,9 @@ const RootNavigator: React.FC = () => {
   const { isLoading, isAuthenticated, user } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
 
-  if (showSplash) {
-    return <AnimatedSplashScreen onAnimationFinish={() => setShowSplash(false)} />;
-  }
-
-  if (isLoading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
+  const handleSplashFinish = useCallback(() => {
+    setShowSplash(false);
+  }, []);
 
   const getAppScreen = () => {
     const role = user?.role?.toLowerCase();
@@ -47,19 +41,32 @@ const RootNavigator: React.FC = () => {
   };
 
   return (
-    <NavigationContainer
-      // Auth transitions must create a fresh navigator tree. Reusing the previous
-      // tree can leave the tab bar attached to the route state from the login flow.
-      key={`${isAuthenticated ? 'app' : 'auth'}-${user?.role?.toLowerCase() ?? ''}`}
-    >
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {isAuthenticated ? getAppScreen() : <Stack.Screen name="Auth" component={LoginScreen} />}
-      </Stack.Navigator>
-    </NavigationContainer>
+    <View style={styles.container}>
+      {isLoading ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color="#2563EB" />
+        </View>
+      ) : (
+        <NavigationContainer
+          // Auth transitions must create a fresh navigator tree. Reusing the previous
+          // tree can leave the tab bar attached to the route state from the login flow.
+          key={`${isAuthenticated ? 'app' : 'auth'}-${user?.role?.toLowerCase() ?? ''}`}
+        >
+          <Stack.Navigator screenOptions={{ headerShown: false }}>
+            {isAuthenticated ? getAppScreen() : <Stack.Screen name="Auth" component={LoginScreen} />}
+            <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
+            <Stack.Screen name="TermsOfUse" component={TermsOfUseScreen} />
+          </Stack.Navigator>
+        </NavigationContainer>
+      )}
+
+      {showSplash && <AnimatedSplashScreen onAnimationFinish={handleSplashFinish} />}
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  container: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 });
 

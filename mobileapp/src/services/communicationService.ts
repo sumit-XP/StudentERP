@@ -3,17 +3,17 @@ import apiClient from '../api/client';
 export const communicationService = {
   getAnnouncements: async () => {
     const response = await apiClient.get('/communication/announcements');
-    return response.data?.data || response.data;
+    return response.data?.announcements || response.data?.data || (Array.isArray(response.data) ? response.data : []);
   },
 
   getMessages: async () => {
     const response = await apiClient.get('/communication/messages');
-    return response.data?.data || response.data;
+    return response.data?.messages || response.data?.data || (Array.isArray(response.data) ? response.data : []);
   },
 
   getConversations: async () => {
     const response = await apiClient.get('/communication/conversations');
-    return response.data?.data || response.data;
+    return response.data?.conversations || response.data?.data || (Array.isArray(response.data) ? response.data : []);
   },
 
   sendMessage: async (recipientId: string, content: string) => {
@@ -23,7 +23,7 @@ export const communicationService = {
 
   getNotifications: async () => {
     const response = await apiClient.get('/communication/notifications');
-    return response.data?.data || response.data;
+    return response.data?.notifications || response.data?.data || (Array.isArray(response.data) ? response.data : []);
   },
 
   markNotificationAsRead: async (notificationId: string) => {

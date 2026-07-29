@@ -24,7 +24,7 @@ import {
 import attendanceService from '../../services/attendanceService';
 import communicationService from '../../services/communicationService';
 
-const ParentDashboard: React.FC = () => {
+const ParentPortalScreen: React.FC = () => {
   const navigation = useNavigation();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -53,7 +53,7 @@ const ParentDashboard: React.FC = () => {
         setAnnouncements(commData.value);
       }
     } catch {
-      // Fallback
+      // Graceful fallback
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -435,4 +435,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default ParentDashboard;
+export default ParentPortalScreen;

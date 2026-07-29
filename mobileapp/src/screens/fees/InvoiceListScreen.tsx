@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,15 @@ import {
   TextInput,
   StyleSheet,
   SafeAreaView,
+  ActivityIndicator,
+  RefreshControl,
+  DimensionValue,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { FeesStackParamList } from '../../navigation/features/FeesNavigator';
+import { feeService } from '../../services/feeService';
 
 type NavProp = StackNavigationProp<FeesStackParamList, 'InvoiceList'>;
 
@@ -25,50 +29,58 @@ interface InvoiceItem {
   status: 'paid' | 'unpaid' | 'partial';
 }
 
-const INITIAL_INVOICES: InvoiceItem[] = [
-  {
-    id: '1',
-    studentName: 'Alex Rivera',
-    feeType: 'Tuition Fees Q3',
-    amount: 15000,
-    paidAmount: 15000,
-    dueDate: 'Oct 30, 2023',
-    status: 'paid',
-  },
-  {
-    id: '2',
-    studentName: 'Beatrice Silva',
-    feeType: 'Tuition Fees Q3',
-    amount: 15000,
-    paidAmount: 7500,
-    dueDate: 'Oct 30, 2023',
-    status: 'partial',
-  },
-  {
-    id: '3',
-    studentName: 'Charlie Vance',
-    feeType: 'Sports & Library Fees',
-    amount: 3500,
-    paidAmount: 0,
-    dueDate: 'Nov 15, 2023',
-    status: 'unpaid',
-  },
-  {
-    id: '4',
-    studentName: 'Diana Prince',
-    feeType: 'Tuition Fees Q3',
-    amount: 15000,
-    paidAmount: 15000,
-    dueDate: 'Oct 30, 2023',
-    status: 'paid',
-  },
-];
-
 const InvoiceListScreen: React.FC = () => {
   const navigation = useNavigation<NavProp>();
-  const [invoices] = useState<InvoiceItem[]>(INITIAL_INVOICES);
+  const [invoices, setInvoices] = useState<InvoiceItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'paid' | 'unpaid' | 'partial'>('all');
+
+  const fetchInvoices = useCallback(async () => {
+    try {
+      const data = await feeService.getInvoices().catch(() => []);
+      if (Array.isArray(data) && data.length > 0) {
+        const mapped: InvoiceItem[] = data.map((inv: any, idx: number) => {
+          const amount = parseFloat(inv.total_amount || inv.amount) || 0;
+          const paidAmount = parseFloat(inv.paid_amount || inv.paidAmount) || (inv.status === 'paid' ? amount : 0);
+          const rawStatus = (inv.status || 'unpaid').toLowerCase();
+          const status: 'paid' | 'unpaid' | 'partial' = rawStatus === 'paid'
+            ? 'paid'
+            : rawStatus === 'partial'
+            ? 'partial'
+            : 'unpaid';
+
+          return {
+            id: inv.id ? String(inv.id) : String(idx + 1),
+            studentName: inv.student_name || inv.studentName || 'Student',
+            feeType: inv.title || inv.fee_type || inv.description || 'Academic Fees',
+            amount,
+            paidAmount,
+            dueDate: inv.due_date ? new Date(inv.due_date).toLocaleDateString() : 'N/A',
+            status,
+          };
+        });
+        setInvoices(mapped);
+      } else {
+        setInvoices([]);
+      }
+    } catch (e) {
+      console.error('Error fetching invoices:', e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchInvoices();
+  }, [fetchInvoices]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchInvoices();
+  }, [fetchInvoices]);
 
   const filteredInvoices = invoices.filter((inv) => {
     const matchesSearch =
@@ -80,8 +92,9 @@ const InvoiceListScreen: React.FC = () => {
 
   const totalCollected = invoices.reduce((sum, item) => sum + item.paidAmount, 0);
   const totalAmount = invoices.reduce((sum, item) => sum + item.amount, 0);
-  const totalPending = totalAmount - totalCollected;
+  const totalPending = totalAmount - totalCollected > 0 ? totalAmount - totalCollected : 0;
   const progressRatio = totalAmount > 0 ? (totalCollected / totalAmount) * 100 : 0;
+  const progressFillWidth: DimensionValue = `${progressRatio}%`;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -104,8 +117,7 @@ const InvoiceListScreen: React.FC = () => {
 
         <View style={styles.progressRow}>
           <View style={styles.progressBarBg}>
-            {}
-            <View style={[styles.progressBarFill, { width: `${progressRatio}%` }]} />
+            <View style={[styles.progressBarFill, { width: progressFillWidth }]} />
           </View>
           <Text style={styles.progressText}>{progressRatio.toFixed(1)}% Collected</Text>
         </View>
@@ -145,11 +157,24 @@ const InvoiceListScreen: React.FC = () => {
       </View>
 
       {/* invoices list */}
-      <ScrollView contentContainerStyle={styles.scrollList} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollList}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#003fb1']} />}
+      >
+        {loading && !refreshing ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color="#003fb1" />
+            <Text style={styles.loadingText}>Loading Billing Ledger...</Text>
+          </View>
+        ) : null}
+
         <View style={styles.listSection}>
           <Text style={styles.sectionHeaderTitle}>Invoices Ledger</Text>
           {filteredInvoices.length === 0 ? (
-            <Text style={styles.emptyText}>No invoices match your selection.</Text>
+            <Text style={styles.emptyText}>
+              {loading ? 'Loading invoices...' : 'No invoices match your selection.'}
+            </Text>
           ) : (
             filteredInvoices.map((item) => (
               <TouchableOpacity
@@ -214,6 +239,21 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8f9ff',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    backgroundColor: 'rgba(0, 63, 177, 0.05)',
+    borderRadius: 12,
+    marginBottom: 12,
+    gap: 8,
+  },
+  loadingText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#003fb1',
   },
   billingStatsCard: {
     backgroundColor: '#ffffff',
@@ -366,7 +406,7 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'start',
+    alignItems: 'flex-start',
     borderBottomWidth: 1,
     borderBottomColor: '#f8f9ff',
     paddingBottom: 10,

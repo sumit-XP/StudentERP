@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,11 +9,15 @@ import {
   SafeAreaView,
   Alert,
   Modal,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { DashboardStackParamList } from '../../navigation/features/DashboardNavigator';
 import { useAuth } from '../../contexts/AuthContext';
+import { dashboardService } from '../../services/dashboardService';
+import { communicationService } from '../../services/communicationService';
 import {
   MenuIcon,
   BellIcon,
@@ -22,25 +26,110 @@ import {
   SettingsIcon,
   SecurityIcon,
   LogoutIcon,
-  AddUserIcon,
   MegaphoneIcon,
   ReportIcon,
-  ConfigIcon,
   PlusIcon,
 } from '../../assets/svgs';
 
 type NavProp = StackNavigationProp<DashboardStackParamList, 'Overview'>;
 
+interface Announcement {
+  id: string | number;
+  title: string;
+  content: string;
+  priority?: string;
+  target_role?: string;
+  created_at?: string;
+}
+
 const AdminDashboard: React.FC = () => {
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const navigation = useNavigation<NavProp>();
   const [attendanceType, setAttendanceType] = useState<'students' | 'staff'>('students');
   const [showDrawer, setShowDrawer] = useState(false);
 
-  // Chart heights corresponding to Monday - Friday
-  const studentChartData = [85, 94, 78, 91, 88];
-  const staffChartData = [92, 96, 88, 95, 90];
-  const activeChartData = attendanceType === 'students' ? studentChartData : staffChartData;
+  // Dynamic API state
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [overview, setOverview] = useState<any>(null);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [attendanceAnalytics, setAttendanceAnalytics] = useState<any[]>([]);
+
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      // 1. Fetch main dashboard overview
+      const overviewRes = await dashboardService.getDashboardAnalytics().catch(() => null);
+      if (overviewRes) {
+        setOverview(overviewRes);
+      }
+
+      // 2. Fetch live announcements
+      const announcementsRes = await communicationService.getAnnouncements().catch(() => []);
+      if (Array.isArray(announcementsRes)) {
+        setAnnouncements(announcementsRes);
+      }
+
+      // 3. Fetch attendance analytics
+      const attendanceRes = await dashboardService.getAttendanceAnalytics('day').catch(() => []);
+      if (Array.isArray(attendanceRes)) {
+        setAttendanceAnalytics(attendanceRes);
+      }
+    } catch (e: unknown) {
+      console.error('Error fetching admin dashboard data:', e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchDashboardData();
+  }, [fetchDashboardData]);
+
+  // Derive attendance graph values strictly from backend attendance analytics
+  const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+
+  const currentGraphData = React.useMemo(() => {
+    if (Array.isArray(attendanceAnalytics) && attendanceAnalytics.length > 0) {
+      return weekDays.map((dayName) => {
+        const match = attendanceAnalytics.find((item) => {
+          if (!item.period) return false;
+          const d = new Date(item.period);
+          const dayIndex = d.getDay(); // 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri
+          const dayMap: Record<number, string> = { 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri' };
+          return dayMap[dayIndex] === dayName;
+        });
+
+        if (match) {
+          const rate = Math.round(parseFloat(match.attendance_rate) || 0);
+          return {
+            day: dayName,
+            rate,
+            present: parseInt(match.present_count, 10) || 0,
+            total: parseInt(match.total_records, 10) || 0,
+          };
+        }
+        return { day: dayName, rate: 0, present: 0, total: 0 };
+      });
+    }
+
+    return weekDays.map((dayName) => ({ day: dayName, rate: 0, present: 0, total: 0 }));
+  }, [attendanceAnalytics]);
+
+  // Calculate dynamic summary stats directly from database records
+  const totalDaysWithData = currentGraphData.filter((item) => item.rate > 0);
+  const calculatedAvgRate = totalDaysWithData.length > 0
+    ? (totalDaysWithData.reduce((acc, curr) => acc + curr.rate, 0) / totalDaysWithData.length).toFixed(1) + '%'
+    : (overview?.weeklyAttendance?.attendance_rate ? `${overview.weeklyAttendance.attendance_rate}%` : '0%');
+
+  const calculatedPresent = overview?.weeklyAttendance?.present_count ?? currentGraphData.reduce((acc, curr) => acc + curr.present, 0);
+  const calculatedTotal = overview?.weeklyAttendance?.total_records ?? currentGraphData.reduce((acc, curr) => acc + curr.total, 0);
+  const calculatedAbsent = calculatedTotal - calculatedPresent > 0 ? calculatedTotal - calculatedPresent : 0;
 
   const handleLogout = async () => {
     try {
@@ -72,6 +161,20 @@ const AdminDashboard: React.FC = () => {
     Alert.alert('System Configuration', 'Accessing institutional system configurations.');
   };
 
+  const formatTimeAgo = (dateStr?: string) => {
+    if (!dateStr) return 'Recently';
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return 'Recently';
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    if (diffHours < 1) return 'Just now';
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return 'Yesterday';
+    return `${diffDays} days ago`;
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Side Navigation Drawer Overlay */}
@@ -83,11 +186,6 @@ const AdminDashboard: React.FC = () => {
           onRequestClose={() => setShowDrawer(false)}
         >
           <View style={styles.modalOverlay}>
-            <TouchableOpacity
-              style={styles.drawerOverlayTouch}
-              activeOpacity={1}
-              onPress={() => setShowDrawer(false)}
-            />
             <View style={styles.drawerContentContainer}>
               {/* Drawer Header: User Profile */}
               <View style={styles.drawerHeader}>
@@ -95,14 +193,16 @@ const AdminDashboard: React.FC = () => {
                   <Image
                     style={styles.drawerAvatarImg}
                     source={{
-                      uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuClJd5tPLs2KqiIBF5ifbAWZDAci21zuUCQfxzhjggb4MNK3xOp98L4zrA_zPa8WmkIxbHYa0eBlOFh3XIZjzq-syZANV-W2DT3GHnGb_D_6QP54ScuJAAy4-oOq5ibVf6CSSTyleQ151JQeqpWltLb7OivAM0zvXnH88vnWjcTnpcY0VzUbGO3UezIl_WdPsVI-n_cyjCl3fLXfpqayRnDg8i9JH0sQ_Ud2ai5R8kO6oI6n-q365xH',
+                      uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBB-Qz_VWidTvF94GrrGOrPhV2pGkXIF46b5DF5E8sEhtZeDLVZJXLpAkUyLJGnElGMJvlzyVXN-vjiT-w_N5n5KLq38eW83VWX9XciTmJbdLLw-1p95AiuPFUIgoEo8P4PF4W7qRkmTW6NxYvGe9z0HhZf2D_uOu5VwBPaYSPbvemEmCqnUrM1PLtgAab3rZiNXOCqkXsdZlDZjzT7NMU8Mq7tLGlmeztwzVTf80uW96EesABEW_xN',
                     }}
                   />
                 </View>
                 <View>
-                  <Text style={styles.drawerAdminName}>Admin Name</Text>
-                  <Text style={styles.drawerAdminRole}>Administrator</Text>
-                  <Text style={styles.drawerAdminId}>ID: AD-1024</Text>
+                  <Text style={styles.drawerAdminName}>{user?.name || 'Administrator'}</Text>
+                  <Text style={styles.drawerAdminRole}>
+                    {user?.role ? user.role.toUpperCase() : 'ADMINISTRATOR'}
+                  </Text>
+                  <Text style={styles.drawerAdminId}>{user?.email || 'admin@sikhsha.edu'}</Text>
                 </View>
               </View>
 
@@ -138,22 +238,31 @@ const AdminDashboard: React.FC = () => {
                 </TouchableOpacity>
               </View>
             </View>
+            <TouchableOpacity
+              style={styles.drawerOverlayTouch}
+              activeOpacity={1}
+              onPress={() => setShowDrawer(false)}
+            />
           </View>
         </Modal>
       )}
 
       {/* Top Bar */}
       <View style={styles.headerBar}>
-        <View style={styles.headerProfile}>
-          <TouchableOpacity
-            style={styles.menuBtn}
-            activeOpacity={0.6}
-            onPress={() => setShowDrawer(true)}
-          >
-            <MenuIcon size={24} color="#003fb1" />
-          </TouchableOpacity>
-          <Text style={styles.headerText}>EduCore ERP</Text>
-        </View>
+        <TouchableOpacity
+          style={styles.avatarTouchBtn}
+          activeOpacity={0.8}
+          onPress={() => setShowDrawer(true)}
+        >
+          <View style={styles.avatarWrapper}>
+            <Image
+              style={styles.avatarImg}
+              source={{
+                uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBB-Qz_VWidTvF94GrrGOrPhV2pGkXIF46b5DF5E8sEhtZeDLVZJXLpAkUyLJGnElGMJvlzyVXN-vjiT-w_N5n5KLq38eW83VWX9XciTmJbdLLw-1p95AiuPFUIgoEo8P4PF4W7qRkmTW6NxYvGe9z0HhZf2D_uOu5VwBPaYSPbvemEmCqnUrM1PLtgAab3rZiNXOCqkXsdZlDZjzT7NMU8Mq7tLGlmeztwzVTf80uW96EesABEW_xN',
+              }}
+            />
+          </View>
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.notifBtn}
           activeOpacity={0.6}
@@ -163,8 +272,19 @@ const AdminDashboard: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Bento Grid Row 2: Attendance Overview Weekly Graph */}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#003fb1']} />}
+      >
+        {loading && !refreshing ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color="#003fb1" />
+            <Text style={styles.loadingText}>Fetching live dashboard analytics...</Text>
+          </View>
+        ) : null}
+
+        {/* Attendance Overview Weekly Graph */}
         <TouchableOpacity
           style={styles.attendanceOverviewCard}
           onPress={() => navigation.navigate('AdminAttendanceOverview')}
@@ -211,15 +331,20 @@ const AdminDashboard: React.FC = () => {
 
           {/* Visual Bar Chart */}
           <View style={styles.barChartContainer}>
-            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((day, idx) => {
-              const barHeight = activeChartData[idx];
+            {currentGraphData.map((item) => {
+              const barHeight = item.rate;
               return (
-                <View key={day} style={styles.chartCol}>
-                  <Text style={styles.colLabelTop}>{barHeight}%</Text>
+                <View key={item.day} style={styles.chartCol}>
+                  <Text style={styles.colLabelTop}>{barHeight > 0 ? `${barHeight}%` : '0%'}</Text>
                   <View style={styles.barTrack}>
-                    <View style={[styles.barFillBlue, { height: `${barHeight}%` }]} />
+                    <View
+                      style={[
+                        styles.barFillBlue,
+                        { height: `${barHeight}%`, opacity: barHeight > 0 ? 1 : 0.2 },
+                      ]}
+                    />
                   </View>
-                  <Text style={styles.colLabelBottom}>{day}</Text>
+                  <Text style={styles.colLabelBottom}>{item.day}</Text>
                 </View>
               );
             })}
@@ -229,51 +354,20 @@ const AdminDashboard: React.FC = () => {
           <View style={styles.statsSummaryFooter}>
             <View style={styles.footerStatBox}>
               <Text style={styles.footerStatLabel}>Average</Text>
-              <Text style={[styles.footerStatVal, styles.textBlue]}>91.4%</Text>
+              <Text style={[styles.footerStatVal, styles.textBlue]}>{calculatedAvgRate}</Text>
             </View>
             <View style={styles.footerDivider} />
             <View style={styles.footerStatBox}>
               <Text style={styles.footerStatLabel}>Present</Text>
-              <Text style={styles.footerStatVal}>2,410</Text>
+              <Text style={styles.footerStatVal}>{calculatedPresent.toLocaleString()}</Text>
             </View>
             <View style={styles.footerDivider} />
             <View style={styles.footerStatBox}>
               <Text style={styles.footerStatLabel}>Absent</Text>
-              <Text style={[styles.footerStatVal, styles.textRed]}>42</Text>
+              <Text style={[styles.footerStatVal, styles.textRed]}>{calculatedAbsent.toLocaleString()}</Text>
             </View>
           </View>
         </TouchableOpacity>
-
-        {/* Fees Overview Card */}
-        <View style={styles.feesOverviewCard}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>Fees Overview</Text>
-            <Text style={styles.cardSubtitleRight}>This Month</Text>
-          </View>
-          <View style={styles.feesContentRow}>
-            <View style={styles.feeSection}>
-              <View style={styles.feeHeaderRow}>
-                <Text style={[styles.feeLabel, styles.textGreen]}>Collected (75%)</Text>
-                <Text style={styles.feeValue}>$45,200</Text>
-              </View>
-              <View style={styles.feeProgressBarBg}>
-                <View style={[styles.feeProgressBarFill, styles.bgGreen, styles.w75]} />
-              </View>
-            </View>
-
-            <View style={styles.feeVerticalDivider} />
-
-            <View style={styles.feeSection}>
-              <View style={styles.feeHeaderRow}>
-                <Text style={[styles.feeLabel, styles.textRed]}>Pending (25%)</Text>
-                <Text style={styles.feeValue}>$15,000</Text>
-              </View>
-              <View style={styles.feeProgressBarBg}>
-                <View style={[styles.feeProgressBarFill, styles.bgRed, styles.w25]} />
-              </View>
-            </View>
-          </View>
-        </View>
 
         {/* Announcement Center */}
         <View style={styles.announcementCenterCard}>
@@ -290,55 +384,44 @@ const AdminDashboard: React.FC = () => {
           </View>
 
           <View style={styles.announcementsList}>
-            <View style={styles.announcementItem}>
-              <View style={[styles.announcementBorder, styles.borderBlue]} />
-              <View style={styles.announcementDetails}>
-                <Text style={styles.announcementHeading}>Final Exam Schedule Published</Text>
-                <Text style={styles.announcementTime}>
-                  Sent to: All Students &amp; Faculty • 2h ago
-                </Text>
-                <View style={styles.announcementTagsRow}>
-                  <View style={styles.tagBadge}>
-                    <Text style={styles.tagBadgeText}>Priority: High</Text>
-                  </View>
-                  <View style={styles.tagBadge}>
-                    <Text style={styles.tagBadgeText}>Status: Live</Text>
-                  </View>
-                </View>
-              </View>
-            </View>
+            {announcements.length > 0 ? (
+              announcements.slice(0, 3).map((item, idx) => {
+                const borderStyle =
+                  idx % 3 === 0
+                    ? styles.borderBlue
+                    : idx % 3 === 1
+                    ? styles.borderGrey
+                    : styles.borderGreen;
+                const priorityLabel = item.priority
+                  ? item.priority.charAt(0).toUpperCase() + item.priority.slice(1)
+                  : 'Normal';
+                const timeAgo = formatTimeAgo(item.created_at);
 
-            <View style={styles.announcementItem}>
-              <View style={[styles.announcementBorder, styles.borderGrey]} />
-              <View style={styles.announcementDetails}>
-                <Text style={styles.announcementHeading}>Annual Sports Day Postponed</Text>
-                <Text style={styles.announcementTime}>Sent to: Parents • Yesterday</Text>
-                <View style={styles.announcementTagsRow}>
-                  <View style={styles.tagBadge}>
-                    <Text style={styles.tagBadgeText}>Priority: Medium</Text>
+                return (
+                  <View key={item.id || idx} style={styles.announcementItem}>
+                    <View style={[styles.announcementBorder, borderStyle]} />
+                    <View style={styles.announcementDetails}>
+                      <Text style={styles.announcementHeading}>{item.title}</Text>
+                      <Text style={styles.announcementTime}>
+                        Sent to: {item.target_role || 'All'} • {timeAgo}
+                      </Text>
+                      <View style={styles.announcementTagsRow}>
+                        <View style={styles.tagBadge}>
+                          <Text style={styles.tagBadgeText}>Priority: {priorityLabel}</Text>
+                        </View>
+                        <View style={styles.tagBadge}>
+                          <Text style={styles.tagBadgeText}>Status: Live</Text>
+                        </View>
+                      </View>
+                    </View>
                   </View>
-                  <View style={styles.tagBadge}>
-                    <Text style={styles.tagBadgeText}>Status: Live</Text>
-                  </View>
-                </View>
+                );
+              })
+            ) : (
+              <View style={styles.emptyAnnouncements}>
+                <Text style={styles.emptyAnnouncementsText}>No active announcements.</Text>
               </View>
-            </View>
-
-            <View style={styles.announcementItem}>
-              <View style={[styles.announcementBorder, styles.borderGreen]} />
-              <View style={styles.announcementDetails}>
-                <Text style={styles.announcementHeading}>New Cafeteria Menu - Summer</Text>
-                <Text style={styles.announcementTime}>Sent to: Everyone • 3 days ago</Text>
-                <View style={styles.announcementTagsRow}>
-                  <View style={styles.tagBadge}>
-                    <Text style={styles.tagBadgeText}>Priority: Low</Text>
-                  </View>
-                  <View style={styles.tagBadge}>
-                    <Text style={styles.tagBadgeText}>Status: Live</Text>
-                  </View>
-                </View>
-              </View>
-            </View>
+            )}
           </View>
         </View>
 
@@ -346,15 +429,6 @@ const AdminDashboard: React.FC = () => {
         <View style={styles.quickActionsCard}>
           <Text style={styles.quickActionsTitle}>Quick Actions</Text>
           <View style={styles.quickActionsGrid}>
-            <TouchableOpacity
-              style={styles.quickActionBtn}
-              onPress={handleAddUser}
-              activeOpacity={0.7}
-            >
-              <AddUserIcon size={24} color="#ffffff" style={styles.quickActionIcon} />
-              <Text style={styles.quickActionBtnText}>Add User</Text>
-            </TouchableOpacity>
-
             <TouchableOpacity
               style={styles.quickActionBtn}
               onPress={handleNewAlert}
@@ -373,14 +447,14 @@ const AdminDashboard: React.FC = () => {
               <Text style={styles.quickActionBtnText}>Report</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
+            {/* <TouchableOpacity
               style={styles.quickActionBtn}
               onPress={handleConfig}
               activeOpacity={0.7}
             >
               <ConfigIcon size={24} color="#ffffff" style={styles.quickActionIcon} />
               <Text style={styles.quickActionBtnText}>Config</Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
           </View>
         </View>
       </ScrollView>
@@ -394,36 +468,64 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9ff',
   },
   headerBar: {
-    height: 56,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 6,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    backgroundColor: 'transparent',
+  },
+  avatarTouchBtn: {
+    borderRadius: 20,
+    shadowColor: '#121c28',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  avatarWrapper: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#003fb1',
     backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderColor: '#c3c5d7',
   },
-  headerProfile: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  menuBtn: {
-    padding: 4,
-    marginRight: 8,
-  },
-  headerText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#003fb1',
-  },
+  avatarImg: { width: '100%', height: '100%' },
   notifBtn: {
-    padding: 8,
-    borderRadius: 9999,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#121c28',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 40,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    backgroundColor: 'rgba(0, 63, 177, 0.05)',
+    borderRadius: 12,
+    marginBottom: 12,
+    gap: 8,
+  },
+  loadingText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#003fb1',
   },
   attendanceOverviewCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.8)',
@@ -504,26 +606,27 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   colLabelBottom: {
-    fontSize: 9,
-    fontWeight: '700',
+    fontSize: 10,
+    fontWeight: '600',
     color: '#737686',
     marginTop: 6,
   },
   statsSummaryFooter: {
     flexDirection: 'row',
-    borderTopWidth: 1,
-    borderColor: '#c3c5d7',
-    paddingTop: 12,
+    justifyContent: 'space-around',
+    alignItems: 'center',
     marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderColor: 'rgba(195, 197, 215, 0.4)',
   },
   footerStatBox: {
-    flex: 1,
     alignItems: 'center',
   },
   footerStatLabel: {
     fontSize: 10,
     color: '#737686',
-    fontWeight: '600',
+    fontWeight: '500',
   },
   footerStatVal: {
     fontSize: 14,
@@ -537,9 +640,13 @@ const styles = StyleSheet.create({
   textRed: {
     color: '#ba1a1a',
   },
+  textGreen: {
+    color: '#006c4a',
+  },
   footerDivider: {
     width: 1,
-    backgroundColor: '#c3c5d7',
+    height: 24,
+    backgroundColor: 'rgba(195, 197, 215, 0.4)',
   },
   feesOverviewCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.8)',
@@ -550,14 +657,14 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   cardSubtitleRight: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#737686',
     fontWeight: '500',
   },
   feesContentRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 16,
+    marginTop: 14,
   },
   feeSection: {
     flex: 1,
@@ -569,17 +676,17 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   feeLabel: {
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 10,
+    fontWeight: '600',
   },
   feeValue: {
     fontSize: 12,
-    color: '#434654',
-    fontWeight: '500',
+    fontWeight: '700',
+    color: '#121c28',
   },
   feeProgressBarBg: {
     height: 8,
-    backgroundColor: '#dfe9fa',
+    backgroundColor: '#f8f9ff',
     borderRadius: 4,
     overflow: 'hidden',
   },
@@ -593,20 +700,11 @@ const styles = StyleSheet.create({
   bgRed: {
     backgroundColor: '#ba1a1a',
   },
-  textGreen: {
-    color: '#006c4a',
-  },
   feeVerticalDivider: {
     width: 1,
     height: 32,
-    backgroundColor: '#c3c5d7',
+    backgroundColor: 'rgba(195, 197, 215, 0.4)',
     marginHorizontal: 12,
-  },
-  w75: {
-    width: '75%',
-  },
-  w25: {
-    width: '25%',
   },
   announcementCenterCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.8)',
@@ -620,44 +718,49 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#003fb1',
-    borderRadius: 14,
+    borderRadius: 100,
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 4,
   },
   btnIcon: {
     marginRight: 4,
   },
   createNewBtnText: {
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#ffffff',
   },
   announcementsList: {
-    marginTop: 16,
-    gap: 14,
+    marginTop: 14,
   },
   announcementItem: {
     flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(195, 197, 215, 0.3)',
   },
   announcementBorder: {
     width: 4,
     borderRadius: 2,
-    marginRight: 12,
+    marginRight: 10,
   },
   borderBlue: {
     backgroundColor: '#003fb1',
   },
+  borderGrey: {
+    backgroundColor: '#737686',
+  },
   borderGreen: {
     backgroundColor: '#006c4a',
-  },
-  borderGrey: {
-    backgroundColor: '#c3c5d7',
   },
   announcementDetails: {
     flex: 1,
   },
   announcementHeading: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: '#121c28',
   },
@@ -668,37 +771,46 @@ const styles = StyleSheet.create({
   },
   announcementTagsRow: {
     flexDirection: 'row',
-    gap: 6,
     marginTop: 6,
+    gap: 6,
   },
   tagBadge: {
-    backgroundColor: '#e5eeff',
+    backgroundColor: '#f8f9ff',
+    borderRadius: 4,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#c3c5d7',
   },
   tagBadgeText: {
-    fontSize: 9,
-    fontWeight: '700',
+    fontSize: 8,
     color: '#434654',
+    fontWeight: '500',
+  },
+  emptyAnnouncements: {
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  emptyAnnouncementsText: {
+    fontSize: 12,
+    color: '#737686',
   },
   quickActionsCard: {
     backgroundColor: '#003fb1',
     borderRadius: 16,
     padding: 16,
-    marginBottom: 16,
   },
   quickActionsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
     color: '#ffffff',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   quickActionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    gap: 8,
+    rowGap: 10,
   },
   quickActionBtn: {
     width: '48%',

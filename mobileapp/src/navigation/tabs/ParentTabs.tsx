@@ -3,14 +3,14 @@ import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import DashboardNavigator from '../features/DashboardNavigator';
 import FeesNavigator from '../features/FeesNavigator';
-import CommunicationNavigator from '../features/CommunicationNavigator';
+import ParentPortalScreen from '../../screens/dashboards/ParentPortalScreen';
 import ProfileNavigator from '../features/ProfileNavigator';
 import { DashboardIcon, WalletIcon, MessageIcon, ProfileIcon } from '../../assets/svgs';
 
 export type ParentTabsParamList = {
   DashboardTab: undefined;
   FeesTab: undefined;
-  CommunicationTab: undefined;
+  ParentPortalTab: undefined;
   ProfileTab: undefined;
 };
 
@@ -53,7 +53,7 @@ const ParentTabs: React.FC = () => {
             return <DashboardIcon size={size} color={color} />;
           } else if (route.name === 'FeesTab') {
             return <WalletIcon size={size} color={color} />;
-          } else if (route.name === 'CommunicationTab') {
+          } else if (route.name === 'ParentPortalTab') {
             return <MessageIcon size={size} color={color} />;
           } else if (route.name === 'ProfileTab') {
             return <ProfileIcon size={size} color={color} />;
@@ -68,9 +68,9 @@ const ParentTabs: React.FC = () => {
       <Tab.Screen name="DashboardTab" component={DashboardNavigator} options={{ title: 'Home' }} />
       <Tab.Screen name="FeesTab" component={FeesNavigator} options={{ title: 'Fees' }} />
       <Tab.Screen
-        name="CommunicationTab"
-        component={CommunicationNavigator}
-        options={{ title: 'Comms' }}
+        name="ParentPortalTab"
+        component={ParentPortalScreen}
+        options={{ title: 'Parent Portal' }}
       />
       <Tab.Screen name="ProfileTab" component={ProfileNavigator} options={{ title: 'Profile' }} />
     </Tab.Navigator>

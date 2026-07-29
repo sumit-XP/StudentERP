@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,12 @@ import {
   SafeAreaView,
   Modal,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import DocumentPicker, { DocumentPickerResponse, types } from 'react-native-document-picker';
+import academicService from '../../services/academicService';
+import assignmentService from '../../services/assignmentService';
 import {
   MenuIcon,
   BellIcon,
@@ -31,38 +35,89 @@ const AssignHomeworkScreen: React.FC = () => {
   const [showDrawer, setShowDrawer] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [subject, setSubject] = useState('Advanced Physics');
-  const [sectionA, setSectionA] = useState(true);
-  const [sectionB, setSectionB] = useState(false);
-  const [dueDate, setDueDate] = useState('2023-10-24');
+  const [selectedFile, setSelectedFile] = useState<DocumentPickerResponse | null>(null);
+
+  const [classes, setClasses] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState<string>('');
+  const [selectedClassName, setSelectedClassName] = useState<string>('Select Class');
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
+  const [selectedSubjectName, setSelectedSubjectName] = useState<string>('Select Subject');
+
+  const [dueDate, setDueDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [showSubjectDropdown, setShowSubjectDropdown] = useState(false);
+  const [showClassDropdown, setShowClassDropdown] = useState(false);
   const [publishing, setPublishing] = useState(false);
 
-  const handleUpload = () => {
-    Alert.alert('Upload Attachment', 'Select document from system (PDF, DOCX, ZIP).');
+  useEffect(() => {
+    Promise.allSettled([academicService.getClasses(), academicService.getSubjects()])
+      .then(([clsRes, subjRes]) => {
+        if (clsRes.status === 'fulfilled' && Array.isArray(clsRes.value) && clsRes.value.length > 0) {
+          setClasses(clsRes.value);
+          const firstCls = clsRes.value[0];
+          setSelectedClassId(firstCls.id);
+          setSelectedClassName(`${firstCls.name}${firstCls.section ? `-${firstCls.section}` : ''}`);
+        }
+
+        if (subjRes.status === 'fulfilled' && Array.isArray(subjRes.value) && subjRes.value.length > 0) {
+          setSubjects(subjRes.value);
+          const firstSubj = subjRes.value[0];
+          setSelectedSubjectId(firstSubj.id);
+          setSelectedSubjectName(firstSubj.name);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleUpload = async () => {
+    try {
+      const results = await DocumentPicker.pick({
+        type: [types.allFiles],
+      });
+      if (results && results.length > 0) {
+        setSelectedFile(results[0]);
+      }
+    } catch (err: any) {
+      if (!DocumentPicker.isCancel(err)) {
+        Alert.alert('File Picker Error', 'Unable to pick file from device.');
+      }
+    }
   };
 
-  const handlePublish = () => {
+  const handlePublish = async () => {
     if (!title.trim()) {
       Alert.alert('Validation Error', 'Please enter an assignment title.');
       return;
     }
+
+    if (!selectedClassId || !selectedSubjectId) {
+      Alert.alert('Validation Error', 'Please select both a valid class and subject.');
+      return;
+    }
+
     setPublishing(true);
-    setTimeout(() => {
-      setPublishing(false);
+    try {
+      await assignmentService.createAssignment({
+        title: title.trim(),
+        description: description.trim(),
+        classId: selectedClassId,
+        subjectId: selectedSubjectId,
+        dueDate,
+        maxMarks: 100,
+      });
+
       Alert.alert('Success', 'Assignment has been published successfully.', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
-    }, 1200);
+    } catch (err: any) {
+      Alert.alert('Publish Error', err?.message || 'Failed to publish assignment.');
+    } finally {
+      setPublishing(false);
+    }
   };
 
   const handleSaveDraft = () => {
     Alert.alert('Saved', 'Assignment draft has been saved.');
-  };
-
-  const selectSubject = (subj: string) => {
-    setSubject(subj);
-    setShowSubjectDropdown(false);
   };
 
   return (
@@ -119,8 +174,8 @@ const AssignHomeworkScreen: React.FC = () => {
                   />
                 </View>
                 <View>
-                  <Text style={styles.drawerTeacherName}>Prof. Anderson</Text>
-                  <Text style={styles.drawerTeacherRole}>Science Department</Text>
+                  <Text style={styles.drawerTeacherName}>Teacher Portal</Text>
+                  <Text style={styles.drawerTeacherRole}>Academic Staff</Text>
                 </View>
               </View>
 
@@ -148,128 +203,113 @@ const AssignHomeworkScreen: React.FC = () => {
                     Assignments
                   </Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.drawerNavItem}
-                  activeOpacity={0.6}
-                  onPress={() => {
-                    setShowDrawer(false);
-                    const parent = navigation.getParent();
-                    if (parent) {
-                      parent.navigate('AttendanceTab');
-                    }
-                  }}
-                >
-                  <FactCheckIcon size={22} color="#434654" />
-                  <Text style={styles.drawerNavItemText}>Attendance</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.drawerNavItem}
-                  activeOpacity={0.6}
-                  onPress={() => {
-                    setShowDrawer(false);
-                    Alert.alert('Messages', 'Opening messages center.');
-                  }}
-                >
-                  <ProfileIcon size={22} color="#434654" />
-                  <Text style={styles.drawerNavItemText}>Messages</Text>
-                </TouchableOpacity>
-
-                <View style={styles.drawerDivider} />
-
-                <TouchableOpacity
-                  style={styles.drawerNavItem}
-                  activeOpacity={0.6}
-                  onPress={() => {
-                    setShowDrawer(false);
-                    Alert.alert('Settings', 'Opening system settings.');
-                  }}
-                >
-                  <SettingsIcon size={22} color="#434654" />
-                  <Text style={styles.drawerNavItemText}>Settings</Text>
-                </TouchableOpacity>
               </ScrollView>
-
-              {/* Drawer Stats Card */}
-              <View style={styles.drawerStatsWrapper}>
-                <View style={styles.drawerStatsCard}>
-                  <Text style={styles.drawerStatsLabel}>QUICK STATS</Text>
-                  <View style={styles.drawerStatsValueRow}>
-                    <Text style={styles.drawerStatsValue}>12 Active</Text>
-                    <SendIcon size={14} color="#ffffff" style={styles.rotateIcon} />
-                  </View>
-                </View>
-              </View>
             </View>
           </View>
         </Modal>
       )}
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Header Title Section */}
-        <View style={styles.pageHeader}>
-          <Text style={styles.headlineTitle}>Assign Homework</Text>
-          <Text style={styles.headlineSubtitle}>
-            Create and distribute new learning materials to your students.
-          </Text>
-        </View>
-
-        {/* Primary Form Fields */}
         <View style={styles.formContainer}>
-          {/* Assignment Title Card */}
+          {/* Header block */}
+          <View style={styles.pageHeader}>
+            <Text style={styles.headlineTitle}>Create Assignment</Text>
+            <Text style={styles.headlineSubtitle}>
+              Publish coursework and send notifications to your enrolled students.
+            </Text>
+          </View>
+
+          {/* Title input */}
           <View style={styles.glassCard}>
             <Text style={styles.inputLabel}>ASSIGNMENT TITLE</Text>
             <TextInput
               style={styles.titleInput}
-              placeholder="e.g., Introduction to Quantum Mechanics Part 1"
+              placeholder="e.g. Chapter 4 - Thermodynamics Exercises"
+              placeholderTextColor="#737686"
               value={title}
               onChangeText={setTitle}
-              placeholderTextColor="#737686"
             />
           </View>
 
-          {/* Description Card */}
+          {/* Description input */}
           <View style={styles.glassCard}>
             <Text style={styles.inputLabel}>INSTRUCTIONS & DESCRIPTION</Text>
             <TextInput
               style={styles.descriptionInput}
-              placeholder="Enter detailed instructions for your students here..."
-              value={description}
-              onChangeText={setDescription}
+              placeholder="Detailed instructions for the assignment..."
+              placeholderTextColor="#737686"
               multiline
               numberOfLines={6}
               textAlignVertical="top"
-              placeholderTextColor="#737686"
+              value={description}
+              onChangeText={setDescription}
             />
-            {/* Format buttons row mock */}
-            <View style={styles.formatButtonsRow}>
-              <TouchableOpacity style={styles.formatBtn} activeOpacity={0.6}>
-                <Text style={styles.formatBtnTextBold}>B</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.formatBtn} activeOpacity={0.6}>
-                <Text style={styles.formatBtnTextItalic}>I</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.formatBtn} activeOpacity={0.6}>
-                <Text style={styles.formatBtnTextList}>• List</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.formatBtn} activeOpacity={0.6}>
-                <Text style={styles.formatBtnTextLink}>Link</Text>
-              </TouchableOpacity>
-            </View>
           </View>
 
           {/* Attachment upload area */}
-          <TouchableOpacity style={styles.uploadCard} activeOpacity={0.7} onPress={handleUpload}>
-            <CloudUploadIcon size={36} color="#003fb1" />
-            <Text style={styles.uploadTitle}>Upload Attachments</Text>
-            <Text style={styles.uploadDesc}>
-              Drag and drop files or click to browse (PDF, DOCX, ZIP)
-            </Text>
-          </TouchableOpacity>
+          {selectedFile ? (
+            <View style={styles.glassCard}>
+              <Text style={styles.inputLabel}>ATTACHED FILE</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                <View style={{ flex: 1, marginRight: 10 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#121c28' }} numberOfLines={1}>
+                    {selectedFile.name}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: '#737686', marginTop: 2 }}>
+                    {selectedFile.size ? `${(selectedFile.size / 1024).toFixed(1)} KB` : 'Selected'}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => setSelectedFile(null)} activeOpacity={0.7} style={{ padding: 6 }}>
+                  <Text style={{ color: '#ba1a1a', fontWeight: '700', fontSize: 12 }}>Remove</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.uploadCard} activeOpacity={0.7} onPress={handleUpload}>
+              <CloudUploadIcon size={36} color="#003fb1" />
+              <Text style={styles.uploadTitle}>Upload Attachments</Text>
+              <Text style={styles.uploadDesc}>
+                Tap to browse files from your device (PDF, DOCX, ZIP, Images)
+              </Text>
+            </TouchableOpacity>
+          )}
 
           {/* Configuration Card */}
           <View style={styles.glassCard}>
+            {/* Target Class Dropdown */}
+            <View style={styles.selectWrapper}>
+              <Text style={styles.inputLabel}>TARGET CLASS</Text>
+              <TouchableOpacity
+                style={styles.dropdownSelector}
+                activeOpacity={0.7}
+                onPress={() => setShowClassDropdown(!showClassDropdown)}
+              >
+                <Text style={styles.dropdownText}>{selectedClassName}</Text>
+                <ChevronRightIcon size={18} color="#003fb1" style={styles.rotate90} />
+              </TouchableOpacity>
+
+              {showClassDropdown && (
+                <View style={styles.dropdownMenu}>
+                  {classes.map((c) => {
+                    const cName = `${c.name}${c.section ? `-${c.section}` : ''}`;
+                    return (
+                      <TouchableOpacity
+                        key={c.id}
+                        style={styles.dropdownMenuItem}
+                        onPress={() => {
+                          setSelectedClassId(c.id);
+                          setSelectedClassName(cName);
+                          setShowClassDropdown(false);
+                        }}
+                      >
+                        <Text style={styles.dropdownMenuItemText}>{cName}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+
             {/* Subject Selector */}
             <View style={styles.selectWrapper}>
               <Text style={styles.inputLabel}>SUBJECT</Text>
@@ -278,54 +318,27 @@ const AssignHomeworkScreen: React.FC = () => {
                 activeOpacity={0.7}
                 onPress={() => setShowSubjectDropdown(!showSubjectDropdown)}
               >
-                <Text style={styles.dropdownText}>{subject}</Text>
+                <Text style={styles.dropdownText}>{selectedSubjectName}</Text>
                 <ChevronRightIcon size={18} color="#003fb1" style={styles.rotate90} />
               </TouchableOpacity>
 
               {showSubjectDropdown && (
                 <View style={styles.dropdownMenu}>
-                  {[
-                    'Advanced Physics',
-                    'Theoretical Chemistry',
-                    'Applied Mathematics',
-                    'Molecular Biology',
-                  ].map((subj) => (
+                  {subjects.map((subj) => (
                     <TouchableOpacity
-                      key={subj}
+                      key={subj.id}
                       style={styles.dropdownMenuItem}
-                      onPress={() => selectSubject(subj)}
+                      onPress={() => {
+                        setSelectedSubjectId(subj.id);
+                        setSelectedSubjectName(subj.name);
+                        setShowSubjectDropdown(false);
+                      }}
                     >
-                      <Text style={styles.dropdownMenuItemText}>{subj}</Text>
+                      <Text style={styles.dropdownMenuItemText}>{subj.name}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
               )}
-            </View>
-
-            {/* Target Class Checkboxes */}
-            <View style={styles.selectWrapper}>
-              <Text style={styles.inputLabel}>TARGET CLASS</Text>
-              <TouchableOpacity
-                style={styles.checkboxRow}
-                activeOpacity={0.8}
-                onPress={() => setSectionA(!sectionA)}
-              >
-                <View style={[styles.checkbox, sectionA && styles.checkboxChecked]}>
-                  {sectionA && <Text style={styles.checkMark}>✓</Text>}
-                </View>
-                <Text style={styles.checkboxLabel}>Section A - Mon/Wed</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.checkboxRow}
-                activeOpacity={0.8}
-                onPress={() => setSectionB(!sectionB)}
-              >
-                <View style={[styles.checkbox, sectionB && styles.checkboxChecked]}>
-                  {sectionB && <Text style={styles.checkMark}>✓</Text>}
-                </View>
-                <Text style={styles.checkboxLabel}>Section B - Tue/Thu</Text>
-              </TouchableOpacity>
             </View>
 
             {/* Due Date field */}
@@ -347,11 +360,7 @@ const AssignHomeworkScreen: React.FC = () => {
           {/* Summary & Publish Box */}
           <View style={styles.summaryCard}>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Target Students</Text>
-              <Text style={styles.summaryValue}>42 Total</Text>
-            </View>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Points</Text>
+              <Text style={styles.summaryLabel}>Max Points</Text>
               <Text style={styles.summaryValue}>100 pts</Text>
             </View>
 
@@ -361,10 +370,14 @@ const AssignHomeworkScreen: React.FC = () => {
               onPress={handlePublish}
               disabled={publishing}
             >
-              <SendIcon size={18} color="#003fb1" />
-              <Text style={styles.publishBtnText}>
-                {publishing ? 'Publishing...' : 'Publish Assignment'}
-              </Text>
+              {publishing ? (
+                <ActivityIndicator color="#003fb1" />
+              ) : (
+                <>
+                  <SendIcon size={18} color="#003fb1" />
+                  <Text style={styles.publishBtnText}>Publish Assignment</Text>
+                </>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity

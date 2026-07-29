@@ -14,11 +14,57 @@ import {
   Modal,
   ImageBackground,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../contexts/AuthContext';
 import { authService } from '../../services/authService';
 import { User } from '../../types/index';
+
+const AccountIcon: React.FC<{ color?: string; size?: number; style?: object }> = ({
+  color = '#737686',
+  size = 20,
+  style,
+}) => (
+  <View style={style}>
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <Circle cx={12} cy={7} r={4} />
+    </Svg>
+  </View>
+);
+
+const LockIcon: React.FC<{ color?: string; size?: number; style?: object }> = ({
+  color = '#737686',
+  size = 20,
+  style,
+}) => (
+  <View style={style}>
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <Rect x={3} y={11} width={18} height={11} rx={2} ry={2} />
+      <Path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </Svg>
+  </View>
+);
+
+const EyeIcon: React.FC<{ color?: string; size?: number }> = ({
+  color = '#737686',
+  size = 20,
+}) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+    <Circle cx={12} cy={12} r={3} />
+  </Svg>
+);
+
+const EyeOffIcon: React.FC<{ color?: string; size?: number }> = ({
+  color = '#737686',
+  size = 20,
+}) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+    <Line x1={1} y1={1} x2={23} y2={23} />
+  </Svg>
+);
 
 const LoginScreen: React.FC = () => {
   const { signIn } = useAuth();
@@ -27,6 +73,12 @@ const LoginScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const [secureText, setSecureText] = useState(true);
   const [loading, setLoading] = useState(false);
+
+  // Forgot Password Modal State
+  const [forgotModalVisible, setForgotModalVisible] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
 
 
   const handleAuth = async () => {
@@ -49,12 +101,23 @@ const LoginScreen: React.FC = () => {
     }
   };
 
-  const handleForgotLink = () => {
-    Alert.alert(
-      'Reset Password',
-      'If this email is registered in our system, a recovery link will be sent shortly.',
-      [{ text: 'OK' }],
-    );
+  const handleOpenForgotModal = () => {
+    setResetEmail(email || '');
+    setResetSuccess(false);
+    setForgotModalVisible(true);
+  };
+
+  const handleSendResetLink = async () => {
+    if (!resetEmail.trim()) {
+      Alert.alert('Required', 'Please enter your registered username or email.');
+      return;
+    }
+    setResetLoading(true);
+    // Simulate network request for password recovery link
+    setTimeout(() => {
+      setResetLoading(false);
+      setResetSuccess(true);
+    }, 1200);
   };
 
   const togglePasswordVisibility = () => {
@@ -96,10 +159,9 @@ const LoginScreen: React.FC = () => {
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Username or Email</Text>
                   <View style={styles.inputWrapper}>
-                    <Icon
-                      name="account-outline"
-                      size={20}
+                    <AccountIcon
                       color="#737686"
+                      size={20}
                       style={styles.inputIcon}
                     />
                     <TextInput
@@ -119,12 +181,12 @@ const LoginScreen: React.FC = () => {
                 <View style={styles.inputGroup}>
                   <View style={styles.passwordHeader}>
                     <Text style={styles.inputLabel}>Password</Text>
-                    <TouchableOpacity onPress={handleForgotLink} activeOpacity={0.6}>
+                    <TouchableOpacity onPress={handleOpenForgotModal} activeOpacity={0.6}>
                       <Text style={styles.forgotText}>Forgot Password?</Text>
                     </TouchableOpacity>
                   </View>
                   <View style={styles.inputWrapper}>
-                    <Icon name="lock-outline" size={20} color="#737686" style={styles.inputIcon} />
+                    <LockIcon color="#737686" size={20} style={styles.inputIcon} />
                     <TextInput
                       style={[styles.textInput, styles.passwordInput]}
                       placeholder="••••••••"
@@ -139,11 +201,11 @@ const LoginScreen: React.FC = () => {
                       onPress={togglePasswordVisibility}
                       activeOpacity={0.6}
                     >
-                      <Icon
-                        name={secureText ? 'eye-outline' : 'eye-off-outline'}
-                        size={20}
-                        color="#737686"
-                      />
+                      {secureText ? (
+                        <EyeOffIcon color="#737686" size={20} />
+                      ) : (
+                        <EyeIcon color="#737686" size={20} />
+                      )}
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -165,15 +227,24 @@ const LoginScreen: React.FC = () => {
 
               {/* Legal Footer */}
               <View style={styles.footer}>
+                <Text style={styles.footerCopyrightText}>
+                  © All rights reserved to Sikhsha
+                </Text>
                 <Text style={styles.footerSecuredText}>
-                  Protected by institution-grade security.
+                  Licensed for Educational Institution Use
                 </Text>
                 <View style={styles.footerLinkRow}>
-                  <TouchableOpacity activeOpacity={0.6}>
+                  <TouchableOpacity
+                    onPress={() => (navigation as any).navigate('PrivacyPolicy')}
+                    activeOpacity={0.6}
+                  >
                     <Text style={styles.footerLink}>Privacy Policy</Text>
                   </TouchableOpacity>
                   <Text style={styles.footerBullet}> • </Text>
-                  <TouchableOpacity activeOpacity={0.6}>
+                  <TouchableOpacity
+                    onPress={() => (navigation as any).navigate('TermsOfUse')}
+                    activeOpacity={0.6}
+                  >
                     <Text style={styles.footerLink}>Terms of Use</Text>
                   </TouchableOpacity>
                 </View>
@@ -182,6 +253,75 @@ const LoginScreen: React.FC = () => {
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
+
+      {/* Forgot Password Modal */}
+      <Modal
+        visible={forgotModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setForgotModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.forgotCard}>
+            <Text style={styles.forgotCardTitle}>Reset Password</Text>
+            <Text style={styles.forgotCardSubtitle}>
+              {resetSuccess
+                ? 'Check your inbox! We sent password recovery instructions to your registered email.'
+                : 'Enter your registered email address or username to receive a password reset link.'}
+            </Text>
+
+            {!resetSuccess ? (
+              <>
+                <View style={[styles.inputWrapper, { marginTop: 16 }]}>
+                  <AccountIcon color="#737686" size={20} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Enter email or username"
+                    placeholderTextColor="#737686"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    value={resetEmail}
+                    onChangeText={setResetEmail}
+                    editable={!resetLoading}
+                  />
+                </View>
+
+                <View style={styles.modalActionRow}>
+                  <TouchableOpacity
+                    style={styles.cancelModalButton}
+                    onPress={() => setForgotModalVisible(false)}
+                    disabled={resetLoading}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.cancelModalButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.sendModalButton}
+                    onPress={handleSendResetLink}
+                    disabled={resetLoading}
+                    activeOpacity={0.8}
+                  >
+                    {resetLoading ? (
+                      <ActivityIndicator color="#ffffff" size="small" />
+                    ) : (
+                      <Text style={styles.sendModalButtonText}>Send Link</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={[styles.primaryButton, { marginTop: 20 }]}
+                onPress={() => setForgotModalVisible(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.primaryButtonText}>Done</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
     </ImageBackground>
   );
 };
@@ -307,16 +447,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   footer: {
-    marginTop: 32,
+    marginTop: 28,
     alignItems: 'center',
+  },
+  footerCopyrightText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#121c28',
+    textAlign: 'center',
+    marginBottom: 2,
   },
   footerSecuredText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '500',
     color: '#737686',
     textAlign: 'center',
     lineHeight: 14,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   footerLinkRow: {
     flexDirection: 'row',
@@ -332,6 +479,58 @@ const styles = StyleSheet.create({
     color: '#737686',
     fontSize: 11,
     marginHorizontal: 4,
+  },
+  forgotCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
+    shadowColor: '#121c28',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 15,
+    elevation: 10,
+  },
+  forgotCardTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#121c28',
+    marginBottom: 6,
+  },
+  forgotCardSubtitle: {
+    fontSize: 13,
+    color: '#434654',
+    lineHeight: 18,
+  },
+  modalActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: 20,
+  },
+  cancelModalButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginRight: 10,
+  },
+  cancelModalButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#737686',
+  },
+  sendModalButton: {
+    backgroundColor: '#003fb1',
+    borderRadius: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    minWidth: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendModalButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   testNavTrigger: {
     position: 'absolute',

@@ -4,13 +4,15 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import DashboardNavigator from '../features/DashboardNavigator';
 import AttendanceNavigator from '../features/AttendanceNavigator';
 import AssignmentsNavigator from '../features/AssignmentsNavigator';
+import CommunicationNavigator from '../features/CommunicationNavigator';
 import ProfileNavigator from '../features/ProfileNavigator';
-import { DashboardIcon, FactCheckIcon, AssignmentIcon, ProfileIcon } from '../../assets/svgs';
+import { DashboardIcon, FactCheckIcon, AssignmentIcon, MessageIcon, ProfileIcon } from '../../assets/svgs';
 
 export type TeacherTabsParamList = {
   DashboardTab: undefined;
   AttendanceTab: undefined;
   AssignmentsTab: undefined;
+  MessagesTab: undefined;
   ProfileTab: undefined;
 };
 
@@ -58,6 +60,9 @@ const TeacherTabs: React.FC = () => {
           if (route.name === 'AssignmentsTab') {
             return <AssignmentIcon size={size} color={color} />;
           }
+          if (route.name === 'MessagesTab') {
+            return <MessageIcon size={size} color={color} />;
+          }
           if (route.name === 'ProfileTab') {
             return <ProfileIcon size={size} color={color} />;
           }
@@ -78,6 +83,11 @@ const TeacherTabs: React.FC = () => {
         name="AssignmentsTab"
         component={AssignmentsNavigator}
         options={{ title: 'Assignments' }}
+      />
+      <Tab.Screen
+        name="MessagesTab"
+        component={CommunicationNavigator}
+        options={{ title: 'Messages', unmountOnBlur: true }}
       />
       <Tab.Screen name="ProfileTab" component={ProfileNavigator} options={{ title: 'Profile' }} />
     </Tab.Navigator>

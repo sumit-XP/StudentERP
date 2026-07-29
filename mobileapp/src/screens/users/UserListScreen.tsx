@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,11 +9,14 @@ import {
   Image,
   Alert,
   SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { UsersStackParamList } from '../../navigation/features/UsersNavigator';
+import { academicService } from '../../services/academicService';
+import { userService } from '../../services/userService';
 
 type NavProp = StackNavigationProp<UsersStackParamList, 'UserList'>;
 
@@ -25,64 +28,119 @@ interface UserDirectoryItem {
   role: 'Student' | 'Teacher' | 'Staff';
   status: 'Active' | 'On Leave' | 'Suspended';
   lastLogin: string;
+  className?: string;
+  section?: string;
+  rollNumber?: string;
+  phone?: string;
 }
 
-const INITIAL_DIRECTORY: UserDirectoryItem[] = [
-  {
-    id: '1',
-    name: 'Alex Rivera',
-    email: 'alex.rivera@edu.org',
-    avatar:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuBHNQnXBZokhepAnwoW8uhCkr4eNEyFySOS2yaWZrgNBiid5VvOj7EkHJV6ujJTOt4I1HJE8k3xjPMyMBl8OO5Aj7XYkTPDXkJJfTNKJ356m3EKKBe6b1wnM4FXrZBE2Y_b_63zx8q58uoDKkJTNonXOPjRbMRFwJZEiLCLp5REMHmv8ohWeU9Jld_y3nwrNoZxkrjPNQ-F_fjkovnizTAaC8x0skfKVXvEsy63w73fAkGU8sHUlAHl',
-    role: 'Student',
-    status: 'Active',
-    lastLogin: '2 hours ago',
-  },
-  {
-    id: '2',
-    name: 'Dr. Sarah Jenkins',
-    email: 's.jenkins@edu.org',
-    avatar:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuC1sR-2NYx8TaKdbhsp7XR1X2LdIEjBO3XboKebnufHhqMkWKifyWvHSvu0ufL4Bcv5NBEDjeK18L2uj8QpKDHcu8jJS7VZNoZA2zdNZKiPgheRdMiS-Tecl954gqFMbzsBJTo0cyvXYEqoh5-ouBfzZ6mjmFKg3AosVc7SD8w8XemR0xgGqD3GWYzUpLPN00oNkHtx9OehgrgHmoTI9-tIzRx2U6ZdcdHaxmP0L-NhAhz9eDdTjiUX',
-    role: 'Teacher',
-    status: 'Active',
-    lastLogin: 'Today, 09:45 AM',
-  },
-  {
-    id: '3',
-    name: 'Marcus Thorne',
-    email: 'm.thorne@edu.org',
-    avatar:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuCq9wJY7B-K0Ihxiip8VMrikSOrHNoy5eFssAh2XF217PZHiLfG07ko4gc1cP5Fhlvdpu6CbC76K4zrD7k8ORQphKTcmkE_Vzb16BV3AK-oI9_HovLLZs6XYD3_iRpA_tUnpcR3Uv557n0VTrtV6uG3uQyH3IPsABlwhmMuoVZZCoF-XsyzSUoIpBjdWmXJcRK6AF-uBqBBKvzqf-oWQCBy-wFZOptOfYrAxfhywXZtqzY-ZmNfKYeN',
-    role: 'Staff',
-    status: 'On Leave',
-    lastLogin: '3 days ago',
-  },
-  {
-    id: '4',
-    name: 'Linh Nguyen',
-    email: 'linh.n@edu.org',
-    avatar:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuAzWypNf-6tAHJ5nXLngWKe6x1JCnJMcKZhr-H_HgSJQKSPQdFHrLmKTv_6OEGHWeBTRi504sFoNfgOF8R4rUwYEc9OiPRFqP95EQuis9_77FAQOIu9NbPNqFTbr8RToo_ysYCBA-7FheYzmFgg8L02TwKsBfHWLSlyHtI-T_pYq6D3zSXPk-sjEykqjsh-uk4Q7UmOTN2c4Z7LOwn8JOgZkoqb28jxkhENTwPhC0AfHwtW54pyAIcV',
-    role: 'Student',
-    status: 'Suspended',
-    lastLogin: 'Oct 12, 2023',
-  },
-];
+interface ClassItem {
+  id: string;
+  name: string;
+  section?: string;
+}
 
 const UserListScreen: React.FC = () => {
   const navigation = useNavigation<NavProp>();
-  const [directory] = useState<UserDirectoryItem[]>(INITIAL_DIRECTORY);
+
+  // State management
   const [query, setQuery] = useState('');
-  const [filterRole, setFilterRole] = useState<'All' | 'Student' | 'Teacher' | 'Staff'>('All');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [filterRole, setFilterRole] = useState<'All' | 'Student' | 'Teacher' | 'Staff'>('Student');
+  const [selectedClassId, setSelectedClassId] = useState<string>('All');
+  const [classList, setClassList] = useState<ClassItem[]>([]);
+  const [directory, setDirectory] = useState<UserDirectoryItem[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const handleAddUser = () => {
-    Alert.alert('Add User', 'Add User: New user account generator initialized.');
-  };
+  // Fetch classes on mount for Student class filter
+  useEffect(() => {
+    academicService
+      .getClasses()
+      .then((res) => {
+        if (Array.isArray(res) && res.length > 0) {
+          const mapped: ClassItem[] = res.map((c: any, idx: number) => ({
+            id: c.id ? String(c.id) : String(idx + 1),
+            name: c.name || `Class ${idx + 1}`,
+            section: c.section,
+          }));
+          setClassList(mapped);
+        }
+      })
+      .catch(() => setClassList([]));
+  }, []);
 
+  // Targeted on-demand API search to minimize API calling
+  const executeSearch = useCallback(async (role: string, classId: string, searchStr: string) => {
+    setLoading(true);
+    try {
+      let results: any[] = [];
+
+      if (role === 'Student') {
+        const params: any = {};
+        if (classId !== 'All') params.classId = classId;
+        if (searchStr.trim()) params.search = searchStr.trim();
+        results = await academicService.getStudents(params).catch(() => []);
+      } else if (role === 'Teacher') {
+        const params: any = {};
+        if (searchStr.trim()) params.search = searchStr.trim();
+        results = await academicService.getTeachers(params).catch(() => []);
+      } else if (role === 'Staff') {
+        results = await userService.getUsers().catch(() => []);
+        results = results.filter((u: any) => u.role === 'Staff');
+      } else {
+        // All roles search
+        results = await userService.getUsers().catch(() => []);
+      }
+
+      if (Array.isArray(results) && results.length > 0) {
+        const mapped: UserDirectoryItem[] = results.map((u: any, idx: number) => {
+          const roleRaw = (u.role || u.designation || role).toLowerCase();
+          const userRole: 'Student' | 'Teacher' | 'Staff' = roleRaw.includes('student')
+            ? 'Student'
+            : roleRaw.includes('teacher')
+            ? 'Teacher'
+            : 'Staff';
+
+          return {
+            id: u.id ? String(u.id) : String(idx + 1),
+            name: u.name || u.first_name ? `${u.first_name || u.name} ${u.last_name || ''}`.trim() : 'User',
+            email: u.email || `${u.student_id || 'user'}@sikhsha.edu`,
+            avatar:
+              u.avatar_url ||
+              'https://lh3.googleusercontent.com/aida-public/AB6AXuBB-Qz_VWidTvF94GrrGOrPhV2pGkXIF46b5DF5E8sEhtZeDLVZJXLpAkUyLJGnElGMJvlzyVXN-vjiT-w_N5n5KLq38eW83VWX9XciTmJbdLLw-1p95AiuPFUIgoEo8P4PF4W7qRkmTW6NxYvGe9z0HhZf2D_uOu5VwBPaYSPbvemEmCqnUrM1PLtgAab3rZiNXOCqkXsdZlDZjzT7NMU8Mq7tLGlmeztwzVTf80uW96EesABEW_xN',
+            role: userRole,
+            status: u.is_active === false ? 'Suspended' : 'Active',
+            lastLogin: u.updated_at ? new Date(u.updated_at).toLocaleDateString() : 'Recently',
+            className: u.class_name || u.className,
+            section: u.section,
+            rollNumber: u.roll_number || u.student_id,
+            phone: u.phone,
+          };
+        });
+
+        // Store and deduplicate searched users
+        setDirectory((prev) => {
+          const map = new Map<string, UserDirectoryItem>();
+          prev.forEach((item) => map.set(item.id, item));
+          mapped.forEach((item) => map.set(item.id, item));
+          return Array.from(map.values());
+        });
+      }
+    } catch (e) {
+      console.error('Error executing targeted user search:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Execute search when filters change or search is submitted
+  useEffect(() => {
+    executeSearch(filterRole, selectedClassId, query);
+  }, [filterRole, selectedClassId, executeSearch]);
+
+  // Filter local directory based on active filters
   const filteredDirectory = directory.filter((user) => {
     const matchesSearch =
+      query.trim() === '' ||
       user.name.toLowerCase().includes(query.toLowerCase()) ||
       user.email.toLowerCase().includes(query.toLowerCase());
     const matchesRole = filterRole === 'All' || user.role === filterRole;
@@ -91,19 +149,28 @@ const UserListScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Search and Filters Bento Container */}
+      {/* Search Bar & Role/Class Filter Container */}
       <View style={styles.headerFiltersBlock}>
+        {/* On-Demand Search Bar */}
         <View style={styles.searchBar}>
           <Icon name="magnify" size={20} color="#737686" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search by name, email, or ID..."
+            placeholder="Search by name, email, or student ID..."
             placeholderTextColor="#737686"
             value={query}
             onChangeText={setQuery}
+            onSubmitEditing={() => executeSearch(filterRole, selectedClassId, query)}
+            returnKeyType="search"
           />
+          {query ? (
+            <TouchableOpacity onPress={() => setQuery('')}>
+              <Icon name="close-circle" size={16} color="#737686" />
+            </TouchableOpacity>
+          ) : null}
         </View>
 
+        {/* Role Selector Chips */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -113,58 +180,119 @@ const UserListScreen: React.FC = () => {
             <TouchableOpacity
               key={role}
               style={[styles.chip, filterRole === role && styles.chipActive]}
-              onPress={() => setFilterRole(role)}
+              onPress={() => {
+                setFilterRole(role);
+                setSelectedClassId('All');
+              }}
               activeOpacity={0.7}
             >
               <Text style={[styles.chipText, filterRole === role && styles.chipTextActive]}>
-                {role === 'All' ? 'All Users' : `${role}s`}
+                {role === 'All' ? 'All Roles' : `${role}s`}
               </Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
+
+        {/* Conditional Student Class Filter */}
+        {filterRole === 'Student' && classList.length > 0 ? (
+          <View style={styles.classFilterSection}>
+            <Text style={styles.filterSubTitle}>Filter by Class:</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.classChipsRow}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.classChip,
+                  selectedClassId === 'All' && styles.classChipActive,
+                ]}
+                onPress={() => setSelectedClassId('All')}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.classChipText,
+                    selectedClassId === 'All' && styles.classChipTextActive,
+                  ]}
+                >
+                  All Classes
+                </Text>
+              </TouchableOpacity>
+
+              {classList.map((c) => {
+                const label = `${c.name} ${c.section ? `(${c.section})` : ''}`.trim();
+                const isSelected = selectedClassId === c.id;
+                return (
+                  <TouchableOpacity
+                    key={c.id}
+                    style={[styles.classChip, isSelected && styles.classChipActive]}
+                    onPress={() => setSelectedClassId(c.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.classChipText, isSelected && styles.classChipTextActive]}>
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        ) : null}
       </View>
 
-      {/* Directory list */}
+      {/* Directory List */}
       <ScrollView contentContainerStyle={styles.scrollList} showsVerticalScrollIndicator={false}>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color="#003fb1" />
+            <Text style={styles.loadingText}>Searching Database...</Text>
+          </View>
+        ) : null}
+
         <View style={styles.listCard}>
           <View style={styles.listHeader}>
-            <Text style={styles.listTitle}>Directory Users</Text>
-            <TouchableOpacity
-              style={styles.addNewInlineBtn}
-              onPress={handleAddUser}
-              activeOpacity={0.7}
-            >
-              <Icon name="plus" size={14} color="#003fb1" />
-              <Text style={styles.addNewInlineText}>Add New</Text>
-            </TouchableOpacity>
+            <Text style={styles.listTitle}>
+              Directory Users ({filteredDirectory.length})
+            </Text>
           </View>
 
           {filteredDirectory.length === 0 ? (
-            <Text style={styles.emptyText}>No users match your criteria.</Text>
+            <View style={styles.emptyBox}>
+              <Icon name="account-search-outline" size={32} color="#737686" />
+              <Text style={styles.emptyText}>
+                {loading ? 'Searching...' : 'No users found. Use the search bar or filters above to query.'}
+              </Text>
+            </View>
           ) : (
             filteredDirectory.map((user) => (
               <TouchableOpacity
                 key={user.id}
                 style={styles.userItemRow}
                 onPress={() => {
-                  if (user.role === 'Student') {
-                    navigation.navigate('StudentProfile', { studentId: user.id });
-                  } else {
-                    Alert.alert(
-                      'User Details',
-                      `${user.name} (${user.role}) - Status: ${user.status}`,
-                    );
-                  }
+                  navigation.navigate('StudentProfile', {
+                    studentId: user.id,
+                    userDetail: user,
+                  });
                 }}
                 activeOpacity={0.7}
               >
                 <View style={styles.userInfoCol}>
                   <View style={styles.avatarWrapper}>
-                    <Image style={styles.avatar} source={{ uri: user.avatar }} />
+                    <View style={styles.avatarCircle}>
+                      <Text style={styles.avatarInitialText}>
+                        {(user.name || 'U').charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
                   </View>
                   <View style={styles.nameBlock}>
                     <Text style={styles.userName}>{user.name}</Text>
                     <Text style={styles.userEmail}>{user.email}</Text>
+                    {user.className ? (
+                      <Text style={styles.classSubText}>
+                        Class: {user.className} {user.section ? `(${user.section})` : ''}
+                      </Text>
+                    ) : null}
                   </View>
                 </View>
 
@@ -189,77 +317,14 @@ const UserListScreen: React.FC = () => {
                         {user.role}
                       </Text>
                     </View>
-
-                    <View style={styles.statusDotRow}>
-                      <View
-                        style={[
-                          styles.statusDot,
-                          user.status === 'Active' && styles.dotGreen,
-                          user.status === 'On Leave' && styles.dotGrey,
-                          user.status === 'Suspended' && styles.dotRed,
-                        ]}
-                      />
-                      <Text
-                        style={[
-                          styles.statusText,
-                          user.status === 'Active' && styles.textGreen,
-                          user.status === 'On Leave' && styles.textGrey,
-                          user.status === 'Suspended' && styles.textRed,
-                        ]}
-                      >
-                        {user.status}
-                      </Text>
-                    </View>
                   </View>
-                  <Text style={styles.lastLoginText}>Login: {user.lastLogin}</Text>
+                  <Text style={styles.viewDetailsText}>Tap for Details ›</Text>
                 </View>
               </TouchableOpacity>
             ))
           )}
         </View>
-
-        {/* Pagination Card */}
-        <View style={styles.paginationCard}>
-          <Text style={styles.paginationProgressText}>
-            Showing {filteredDirectory.length} of 1,240 users
-          </Text>
-          <View style={styles.paginationControls}>
-            <TouchableOpacity
-              style={[styles.pageNavBtn, currentPage === 1 && styles.pageNavBtnDisabled]}
-              onPress={() => setCurrentPage(Math.max(1, currentPage - 1))}
-              disabled={currentPage === 1}
-            >
-              <Icon name="chevron-left" size={16} color="#737686" />
-            </TouchableOpacity>
-
-            {[1, 2, 3].map((page) => (
-              <TouchableOpacity
-                key={page}
-                style={[styles.pageBtn, currentPage === page && styles.pageBtnActive]}
-                onPress={() => setCurrentPage(page)}
-              >
-                <Text
-                  style={[styles.pageBtnText, currentPage === page && styles.pageBtnTextActive]}
-                >
-                  {page}
-                </Text>
-              </TouchableOpacity>
-            ))}
-
-            <TouchableOpacity
-              style={styles.pageNavBtn}
-              onPress={() => setCurrentPage(currentPage + 1)}
-            >
-              <Icon name="chevron-right" size={16} color="#737686" />
-            </TouchableOpacity>
-          </View>
-        </View>
       </ScrollView>
-
-      {/* Floating Action Button (FAB) */}
-      <TouchableOpacity style={styles.fabBtn} onPress={handleAddUser} activeOpacity={0.85}>
-        <Icon name="account-plus" size={24} color="#ffffff" />
-      </TouchableOpacity>
     </SafeAreaView>
   );
 };
@@ -276,6 +341,21 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     paddingHorizontal: 16,
     paddingTop: 12,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    backgroundColor: 'rgba(0, 63, 177, 0.05)',
+    borderRadius: 12,
+    marginBottom: 12,
+    gap: 8,
+  },
+  loadingText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#003fb1',
   },
   searchBar: {
     flexDirection: 'row',
@@ -317,6 +397,41 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: '#ffffff',
   },
+  classFilterSection: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f8f9ff',
+  },
+  filterSubTitle: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#737686',
+    marginBottom: 6,
+  },
+  classChipsRow: {
+    gap: 6,
+  },
+  classChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#f8f9ff',
+    borderWidth: 1,
+    borderColor: '#c3c5d7',
+  },
+  classChipActive: {
+    backgroundColor: '#006c4a',
+    borderColor: '#006c4a',
+  },
+  classChipText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#434654',
+  },
+  classChipTextActive: {
+    color: '#ffffff',
+  },
   scrollList: {
     paddingHorizontal: 16,
     paddingTop: 16,
@@ -350,11 +465,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#003fb1',
   },
+  emptyBox: {
+    paddingVertical: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
   emptyText: {
     textAlign: 'center',
     color: '#737686',
-    marginVertical: 20,
     fontSize: 12,
+    paddingHorizontal: 16,
   },
   userItemRow: {
     flexDirection: 'row',
@@ -367,19 +488,28 @@ const styles = StyleSheet.create({
   userInfoCol: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1.1,
+    flex: 1.2,
   },
   avatarWrapper: {
     width: 36,
     height: 36,
     borderRadius: 18,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#c3c5d7',
   },
-  avatar: {
+  avatarCircle: {
     width: '100%',
     height: '100%',
+    backgroundColor: '#eef4ff',
+    borderWidth: 1,
+    borderColor: '#003fb1',
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitialText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#003fb1',
   },
   nameBlock: {
     marginLeft: 10,
@@ -395,8 +525,13 @@ const styles = StyleSheet.create({
     color: '#737686',
     marginTop: 2,
   },
+  classSubText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#003fb1',
+    marginTop: 2,
+  },
   roleStatusCol: {
-    flex: 0.9,
     alignItems: 'flex-end',
     gap: 4,
   },
@@ -406,8 +541,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   roleBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 8,
   },
   roleBadgeStudent: {
@@ -420,7 +555,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#dfe9fa',
   },
   roleBadgeText: {
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: '800',
   },
   roleTextStudent: {
@@ -432,97 +567,11 @@ const styles = StyleSheet.create({
   roleTextStaff: {
     color: '#434654',
   },
-  statusDotRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  dotGreen: {
-    backgroundColor: '#006c4a',
-  },
-  dotGrey: {
-    backgroundColor: '#737686',
-  },
-  dotRed: {
-    backgroundColor: '#ba1a1a',
-  },
-  statusText: {
-    fontSize: 9,
-    fontWeight: '600',
-  },
-  textGreen: {
-    color: '#006c4a',
-  },
-  textGrey: {
-    color: '#737686',
-  },
-  textRed: {
-    color: '#ba1a1a',
-  },
-  lastLoginText: {
-    fontSize: 9,
-    color: '#737686',
-  },
-  paginationCard: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#c3c5d7',
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  paginationProgressText: {
-    fontSize: 11,
-    color: '#737686',
-    fontWeight: '600',
-  },
-  paginationControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  pageNavBtn: {
-    width: 28,
-    height: 28,
-    borderWidth: 1,
-    borderColor: '#c3c5d7',
-    borderRadius: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-  },
-  pageNavBtnDisabled: {
-    opacity: 0.4,
-  },
-  pageBtn: {
-    width: 28,
-    height: 28,
-    borderWidth: 1,
-    borderColor: '#c3c5d7',
-    borderRadius: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-  },
-  pageBtnActive: {
-    backgroundColor: '#003fb1',
-    borderColor: '#003fb1',
-  },
-  pageBtnText: {
-    fontSize: 11,
+  viewDetailsText: {
+    fontSize: 10,
     fontWeight: '700',
-    color: '#434654',
-  },
-  pageBtnTextActive: {
-    color: '#ffffff',
+    color: '#003fb1',
+    marginTop: 2,
   },
   fabBtn: {
     position: 'absolute',

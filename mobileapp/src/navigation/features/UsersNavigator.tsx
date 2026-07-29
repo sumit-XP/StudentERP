@@ -5,7 +5,7 @@ import StudentProfileScreen from '../../screens/users/StudentProfileScreen';
 
 export type UsersStackParamList = {
   UserList: undefined;
-  StudentProfile: { studentId: string };
+  StudentProfile: { studentId: string; userDetail?: any };
 };
 
 const Stack = createStackNavigator<UsersStackParamList>();

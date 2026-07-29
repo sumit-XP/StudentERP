@@ -92,12 +92,15 @@ export const getAssignments = async (req, res) => {
       queryParams.push(isActive === 'true');
     }
 
+    const parsedLimit = Math.max(1, parseInt(limit, 10) || 10);
+    const parsedOffset = Math.max(0, parseInt(offset, 10) || 0);
+
     query += ` 
       GROUP BY a.id, c.name, c.section, s.name, s.code, u.name
       ORDER BY a.created_at DESC 
       LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
     `;
-    queryParams.push(limit, offset);
+    queryParams.push(parsedLimit, parsedOffset);
 
     const result = await pool.query(query, queryParams);
 
@@ -422,8 +425,11 @@ export const getMyAssignments = async (req, res) => {
       }
     }
 
+    const parsedLimit = Math.max(1, parseInt(limit, 10) || 10);
+    const parsedOffset = Math.max(0, parseInt(offset, 10) || 0);
+
     query += ` ORDER BY a.due_date ASC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
-    queryParams.push(limit, offset);
+    queryParams.push(parsedLimit, parsedOffset);
 
     const result = await pool.query(query, queryParams);
 

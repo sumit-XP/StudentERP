@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   Switch,
 } from 'react-native';
+import DocumentPicker, { DocumentPickerResponse, types } from 'react-native-document-picker';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation } from '@react-navigation/native';
 
@@ -24,9 +25,25 @@ const CreateAnnouncementScreen: React.FC = () => {
   const [sendEmail, setSendEmail] = useState(true);
   const [highPriority, setHighPriority] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<DocumentPickerResponse | null>(null);
 
   const [showClassDropdown, setShowClassDropdown] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+
+  const handleAttachFile = async () => {
+    try {
+      const results = await DocumentPicker.pick({
+        type: [types.allFiles],
+      });
+      if (results && results.length > 0) {
+        setSelectedFile(results[0]);
+      }
+    } catch (err: any) {
+      if (!DocumentPicker.isCancel(err)) {
+        Alert.alert('File Picker Error', 'Unable to pick file from device.');
+      }
+    }
+  };
 
   const handlePublish = async () => {
     if (!title.trim() || !content.trim()) {
@@ -225,15 +242,17 @@ const CreateAnnouncementScreen: React.FC = () => {
             />
           </View>
 
-          {/* Attachments simulator */}
+          {/* Attachments picker */}
           <TouchableOpacity
             style={styles.attachmentBtn}
-            onPress={() => Alert.alert('Attachment', 'Launching file picker simulator.')}
+            onPress={handleAttachFile}
             disabled={publishing}
             activeOpacity={0.6}
           >
             <Icon name="paperclip" size={18} color="#003fb1" style={styles.btnIcon} />
-            <Text style={styles.attachmentBtnText}>Attach Files (PDF, Images)</Text>
+            <Text style={styles.attachmentBtnText}>
+              {selectedFile ? `Attached: ${selectedFile.name}` : 'Attach Files (PDF, Images)'}
+            </Text>
           </TouchableOpacity>
 
           {/* Publish / Cancel actions */}

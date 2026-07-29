@@ -1,6 +1,11 @@
 import apiClient from '../api/client';
 
 export const feeService = {
+  getInvoices: async () => {
+    const response = await apiClient.get('/fees/invoices');
+    return response.data?.invoices || response.data?.data || response.data || [];
+  },
+
   getFeeReports: async (endpoint: string) => {
     // Allows passing dynamic endpoints based on the active tab (e.g., /fees/pending, /fees/history)
     const response = await apiClient.get(endpoint);

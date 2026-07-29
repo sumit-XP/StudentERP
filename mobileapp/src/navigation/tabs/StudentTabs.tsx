@@ -3,14 +3,16 @@ import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import DashboardNavigator from '../features/DashboardNavigator';
 import AssignmentsNavigator from '../features/AssignmentsNavigator';
-import CommunicationNavigator from '../features/CommunicationNavigator';
+import ParentDashboard from '../../screens/dashboards/ParentDashboard';
+import AnnouncementsScreen from '../../screens/communication/AnnouncementsScreen';
 import ProfileNavigator from '../features/ProfileNavigator';
-import { DashboardIcon, AssignmentIcon, MessageIcon, ProfileIcon } from '../../assets/svgs';
+import { DashboardIcon, AssignmentIcon, MessageIcon, ProfileIcon, MegaphoneIcon } from '../../assets/svgs';
 
 export type StudentTabsParamList = {
   DashboardTab: undefined;
   AssignmentsTab: undefined;
-  CommunicationTab: undefined;
+  AnnouncementsTab: undefined;
+  ParentPortalTab: undefined;
   ProfileTab: undefined;
 };
 
@@ -53,7 +55,9 @@ const StudentTabs: React.FC = () => {
             return <DashboardIcon size={size} color={color} />;
           } else if (route.name === 'AssignmentsTab') {
             return <AssignmentIcon size={size} color={color} />;
-          } else if (route.name === 'CommunicationTab') {
+          } else if (route.name === 'AnnouncementsTab') {
+            return <MegaphoneIcon size={size} color={color} />;
+          } else if (route.name === 'ParentPortalTab') {
             return <MessageIcon size={size} color={color} />;
           } else if (route.name === 'ProfileTab') {
             return <ProfileIcon size={size} color={color} />;
@@ -72,9 +76,14 @@ const StudentTabs: React.FC = () => {
         options={{ title: 'Assignments' }}
       />
       <Tab.Screen
-        name="CommunicationTab"
-        component={CommunicationNavigator}
-        options={{ title: 'Comms' }}
+        name="AnnouncementsTab"
+        component={AnnouncementsScreen}
+        options={{ title: 'Announcements' }}
+      />
+      <Tab.Screen
+        name="ParentPortalTab"
+        component={ParentDashboard}
+        options={{ title: 'Parent Portal' }}
       />
       <Tab.Screen name="ProfileTab" component={ProfileNavigator} options={{ title: 'Profile' }} />
     </Tab.Navigator>

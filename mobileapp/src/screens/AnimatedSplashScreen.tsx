@@ -19,6 +19,11 @@ const AnimatedSplashScreen = ({ onAnimationFinish }: { onAnimationFinish: () => 
   
   const globalOpacity = useRef(new Animated.Value(1)).current;
 
+  const onAnimationFinishRef = useRef(onAnimationFinish);
+  useEffect(() => {
+    onAnimationFinishRef.current = onAnimationFinish;
+  }, [onAnimationFinish]);
+
   useEffect(() => {
     Animated.sequence([
       // 0.0s - 0.5s: Particles appear from bottom
@@ -68,9 +73,9 @@ const AnimatedSplashScreen = ({ onAnimationFinish }: { onAnimationFinish: () => 
         Animated.timing(globalOpacity, { toValue: 0, duration: 400, delay: 400, useNativeDriver: true })
       ])
     ]).start(() => {
-      onAnimationFinish();
+      onAnimationFinishRef.current?.();
     });
-  }, [particlesY, particlesOpacity, maskWidth, schoolBounce, tipsTranslateX, tipsOpacity, iconsOpacity, iconsScale, globalOpacity, onAnimationFinish]);
+  }, []);
 
   const schoolScale = schoolBounce.interpolate({
     inputRange: [0, 0.5, 1],

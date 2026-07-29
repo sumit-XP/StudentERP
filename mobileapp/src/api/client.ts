@@ -2,7 +2,9 @@ import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse, AxiosE
 import EncryptedStorage from 'react-native-encrypted-storage';
 import { Platform } from 'react-native';
 
-const API_BASE_URL = process.env.API_BASE_URL || 'http://10.151.63.148:5000/api';
+// For wired connection via USB, Android emulator (10.0.2.2), or local network:
+const DEFAULT_HOST = Platform.OS === 'android' ? 'http://10.0.2.2:5000/api' : 'http://localhost:5000/api';
+const API_BASE_URL = process.env.API_BASE_URL || DEFAULT_HOST;
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,

@@ -28,68 +28,12 @@ const STATUS_COLORS: Record<string, string> = {
   pending: '#ef6c00',
 };
 
-interface TeacherAssignmentItem {
-  id: string;
-  title: string;
-  subject: string;
-  dueDate: string;
-  submissionsCount: number;
-  totalCount: number;
-  subjectColor: string;
-  textColor: string;
-  isUrgent?: boolean;
-}
-
-const TEACHER_ACTIVE_ASSIGNMENTS: TeacherAssignmentItem[] = [
-  {
-    id: 't-1',
-    title: 'Molecular Biology Midterm Project',
-    subject: 'Science',
-    dueDate: 'Oct 24, 2023',
-    submissionsCount: 24,
-    totalCount: 30,
-    subjectColor: '#82f5c1',
-    textColor: '#005137',
-  },
-  {
-    id: 't-2',
-    title: 'Organic Compounds Lab Report',
-    subject: 'Chemistry',
-    dueDate: 'Oct 28, 2023',
-    submissionsCount: 12,
-    totalCount: 30,
-    subjectColor: '#ffdcc3',
-    textColor: '#6e3900',
-  },
-  {
-    id: 't-3',
-    title: 'Cellular Respiration Quiz',
-    subject: 'Science',
-    dueDate: 'Due in 2 hours',
-    submissionsCount: 28,
-    totalCount: 30,
-    subjectColor: '#82f5c1',
-    textColor: '#005137',
-    isUrgent: true,
-  },
-  {
-    id: 't-4',
-    title: 'Quantum Mechanics Introduction',
-    subject: 'Physics',
-    dueDate: 'Nov 02, 2023',
-    submissionsCount: 0,
-    totalCount: 30,
-    subjectColor: '#d9e3f4',
-    textColor: '#434654',
-  },
-];
-
 const AssignmentListScreen: React.FC = () => {
   const navigation = useNavigation<NavProp>();
   const { user } = useAuth();
-  const isTeacher = user?.role === 'teacher';
+  const isTeacher = user?.role === 'teacher' || user?.role === 'admin';
 
-  // State for student view
+  // State for assignments list
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -97,22 +41,23 @@ const AssignmentListScreen: React.FC = () => {
   // State for teacher view
   const [teacherTab, setTeacherTab] = useState<'active' | 'drafts' | 'past'>('active');
 
+  const fetchAssignmentsList = () => {
+    setLoading(true);
+    assignmentService
+      .getAssignments()
+      .then((data) => {
+        setAssignments(Array.isArray(data) ? data : []);
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
   useEffect(() => {
-    if (!isTeacher) {
-      assignmentService
-        .getAssignments()
-        .then((data) => {
-          setAssignments(Array.isArray(data) ? data : data ?? []);
-        })
-        .catch((e: Error) => setError(e.message))
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
+    fetchAssignmentsList();
   }, [isTeacher]);
 
   const handleCreateAssignment = () => {
-    Alert.alert('Create Assignment', 'Launch announcement/assignment creation form.');
+    navigation.navigate('AssignHomework' as never);
   };
 
   if (loading) {
@@ -131,7 +76,7 @@ const AssignmentListScreen: React.FC = () => {
     );
   }
 
-  // TEACHER MODE RENDER
+  // TEACHER / ADMIN MODE RENDER
   if (isTeacher) {
     return (
       <SafeAreaView style={styles.containerTeacher}>
@@ -146,7 +91,7 @@ const AssignmentListScreen: React.FC = () => {
                 }}
               />
             </View>
-            <Text style={styles.teacherHeaderTitle}>Teacher Portal</Text>
+            <Text style={styles.teacherHeaderTitle}>{user?.name || 'Teacher Portal'}</Text>
           </View>
           <TouchableOpacity
             style={styles.teacherNotifBtn}
@@ -217,101 +162,85 @@ const AssignmentListScreen: React.FC = () => {
           {/* Assignment items list based on selected tab */}
           {teacherTab === 'active' && (
             <View style={styles.cardsGrid}>
-              {TEACHER_ACTIVE_ASSIGNMENTS.map((item) => (
-                <View
-                  key={item.id}
-                  style={[styles.teacherAssignmentCard, item.isUrgent && styles.teacherCardUrgent]}
+              {assignments.length === 0 ? (
+                <TouchableOpacity
+                  style={styles.emptyStateCard}
+                  onPress={handleCreateAssignment}
+                  activeOpacity={0.7}
                 >
-                  <View style={styles.cardHeaderRow}>
-                    <View style={styles.badgesCol}>
-                      <View style={[styles.tagBadge, { backgroundColor: item.subjectColor }]}>
-                        <Text style={[styles.tagText, { color: item.textColor }]}>
-                          {item.subject}
-                        </Text>
-                      </View>
-                      {item.isUrgent && (
-                        <View style={[styles.tagBadge, styles.urgentBadge]}>
-                          <Text style={styles.urgentBadgeText}>Urgent</Text>
+                  <Icon name="calendar-plus" size={32} color="#737686" style={styles.emptyCardIcon} />
+                  <Text style={styles.emptyCardText}>No active assignments. Tap to create one.</Text>
+                </TouchableOpacity>
+              ) : (
+                assignments.map((item: any) => {
+                  const subjectName = item.subject_name || item.subject || 'General';
+                  const className = item.class_name
+                    ? `${item.class_name}${item.section ? `-${item.section}` : ''}`
+                    : '';
+                  const due = item.due_date || item.dueDate
+                    ? new Date(item.due_date || item.dueDate).toLocaleDateString()
+                    : 'No due date';
+                  const subs = item.total_submissions ?? 0;
+
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={styles.teacherAssignmentCard}
+                      activeOpacity={0.85}
+                      onPress={() => navigation.navigate('AssignmentDetail', { assignmentId: item.id })}
+                    >
+                      <View style={styles.cardHeaderRow}>
+                        <View style={styles.badgesCol}>
+                          <View style={[styles.tagBadge, { backgroundColor: '#82f5c1' }]}>
+                            <Text style={[styles.tagText, { color: '#005137' }]}>
+                              {subjectName}
+                            </Text>
+                          </View>
+                          {className ? (
+                            <View style={[styles.tagBadge, { backgroundColor: '#dfe9fa', marginLeft: 6 }]}>
+                              <Text style={[styles.tagText, { color: '#003fb1' }]}>{className}</Text>
+                            </View>
+                          ) : null}
                         </View>
-                      )}
-                    </View>
-                    <TouchableOpacity style={styles.moreBtn} activeOpacity={0.6}>
-                      <Icon name="dots-vertical" size={18} color="#737686" />
+                        <TouchableOpacity style={styles.moreBtn} activeOpacity={0.6}>
+                          <Icon name="dots-vertical" size={18} color="#737686" />
+                        </TouchableOpacity>
+                      </View>
+
+                      <Text style={styles.cardTitleTeacher}>{item.title}</Text>
+
+                      <View style={styles.dueDateRow}>
+                        <Icon name="calendar-blank-outline" size={16} color="#737686" style={styles.dueIcon} />
+                        <Text style={styles.dueDateText}>Due: {due}</Text>
+                      </View>
+
+                      <View style={styles.submissionsMeterSection}>
+                        <View style={styles.meterTextRow}>
+                          <Text style={styles.meterLabel}>Submissions</Text>
+                          <Text style={styles.meterRatio}>{subs} Total</Text>
+                        </View>
+                      </View>
                     </TouchableOpacity>
-                  </View>
-
-                  <Text style={styles.cardTitleTeacher}>{item.title}</Text>
-
-                  <View style={styles.dueDateRow}>
-                    <Icon
-                      name={item.isUrgent ? 'alarm' : 'calendar-blank-outline'}
-                      size={16}
-                      color={item.isUrgent ? '#ba1a1a' : '#737686'}
-                      style={styles.dueIcon}
-                    />
-                    <Text style={[styles.dueDateText, item.isUrgent && styles.dueDateTextUrgent]}>
-                      Due: {item.dueDate}
-                    </Text>
-                  </View>
-
-                  <View style={styles.submissionsMeterSection}>
-                    <View style={styles.meterTextRow}>
-                      <Text style={styles.meterLabel}>Submissions</Text>
-                      <Text style={styles.meterRatio}>
-                        {item.submissionsCount}/{item.totalCount}
-                      </Text>
-                    </View>
-                    <View style={styles.meterProgressBg}>
-                      <View
-                        style={[
-                          styles.meterProgressFill,
-                          {
-                            width: `${(item.submissionsCount / item.totalCount) * 100}%`,
-                          },
-                        ]}
-                      />
-                    </View>
-                  </View>
-                </View>
-              ))}
-
-              {/* Empty State Card */}
-              <TouchableOpacity
-                style={styles.emptyStateCard}
-                onPress={handleCreateAssignment}
-                activeOpacity={0.7}
-              >
-                <Icon name="calendar-plus" size={32} color="#737686" style={styles.emptyCardIcon} />
-                <Text style={styles.emptyCardText}>Plan your next course milestone</Text>
-              </TouchableOpacity>
+                  );
+                })
+              )}
             </View>
           )}
 
           {teacherTab === 'drafts' && (
             <View style={styles.cardsGrid}>
-              <View style={styles.teacherAssignmentCard}>
-                <View style={styles.cardHeaderRow}>
-                  <View style={[styles.tagBadge, styles.badgeOrange]}>
-                    <Text style={[styles.tagText, styles.textOrange]}>Chemistry</Text>
-                  </View>
-                </View>
-                <Text style={styles.cardTitleTeacher}>Organic Compounds Lab Rubrics draft</Text>
-                <Text style={styles.dueDateText}>Last Edited: Yesterday</Text>
+              <View style={styles.emptyStateCard}>
+                <Icon name="file-document-outline" size={32} color="#737686" style={styles.emptyCardIcon} />
+                <Text style={styles.emptyCardText}>No saved drafts.</Text>
               </View>
             </View>
           )}
 
           {teacherTab === 'past' && (
             <View style={styles.cardsGrid}>
-              <View style={styles.teacherAssignmentCard}>
-                <View style={styles.cardHeaderRow}>
-                  <View style={[styles.tagBadge, styles.badgeGrey]}>
-                    <Text style={[styles.tagText, styles.textGrey]}>Physics</Text>
-                  </View>
-                </View>
-                <Text style={styles.cardTitleTeacher}>Thermodynamics Quiz 1</Text>
-                <Text style={styles.dueDateText}>Completed on: Oct 10, 2023</Text>
-                <Text style={styles.meterRatio}>30/30 Graded</Text>
+              <View style={styles.emptyStateCard}>
+                <Icon name="history" size={32} color="#737686" style={styles.emptyCardIcon} />
+                <Text style={styles.emptyCardText}>No past archived assignments.</Text>
               </View>
             </View>
           )}
