@@ -10,13 +10,12 @@ import {
 } from 'react-native';
 import feeService from '../../services/feeService';
 
-type ReportTab = 'dues' | 'defaulters' | 'collections';
+type ReportTab = 'dues' | 'defaulters';
 
-const TABS: ReportTab[] = ['dues', 'defaulters', 'collections'];
+const TABS: ReportTab[] = ['dues', 'defaulters'];
 const ENDPOINTS: Record<ReportTab, string> = {
-  dues: '/fees/reports/dues',
+  dues:       '/fees/reports/dues',
   defaulters: '/fees/reports/defaulters',
-  collections: '/fees/reports/collections',
 };
 
 const FeeReportsScreen: React.FC = () => {

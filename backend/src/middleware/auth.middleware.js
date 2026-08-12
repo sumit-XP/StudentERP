@@ -9,10 +9,11 @@ export const verifyToken = async (req, res, next) => {
   try {
     const decodedJwt = jwt.verify(token, process.env.JWT_SECRET);
     req.user = {
+      id: decodedJwt.userId || decodedJwt.id,
+      userId: decodedJwt.userId || decodedJwt.id,
       uid: decodedJwt.uid,
       email: decodedJwt.email,
       role: decodedJwt.role,
-      userId: decodedJwt.userId,
       school_id: decodedJwt.school_id || null,
       source: "jwt",
     };

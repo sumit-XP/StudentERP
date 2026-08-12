@@ -39,7 +39,19 @@ import {
   batchCreateStudents,
   getStudentGrades,
   getClassGrades,
-  saveClassGrades
+  saveClassGrades,
+
+  // ── Result Management ──
+  createExam,
+  getExams,
+  updateExam,
+  getTeacherAssignedSubjects,
+  getExamGrades,
+  saveExamGrades,
+  getExamClassMatrix,
+  publishClassResult,
+  getStudentPublishedResults,
+  getMyPublishedResults,
 } from "../modules/academic/academic.controller.js";
 import { verifyToken } from "../middleware/auth.middleware.js";
 import { checkRole } from "../middleware/role.middleware.js";
@@ -48,7 +60,7 @@ import { scopeToSchool, requireActiveSchool } from "../middleware/tenant.middlew
 const router = express.Router();
 
 // Apply tenant scoping to ALL academic routes
-router.use(verifyToken, checkRole(["admin", "teacher", "student", "super_admin"]), scopeToSchool, requireActiveSchool);
+router.use(verifyToken, checkRole(["admin", "teacher", "student", "super_admin", "parent"]), scopeToSchool, requireActiveSchool);
 
 // ==================== ACADEMIC YEARS ====================
 router.post("/academic-years", verifyToken, checkRole(["admin"]), createAcademicYear);
@@ -72,6 +84,9 @@ router.post("/students/batch", verifyToken, checkRole(["admin", "teacher"]), bat
 router.get("/students", verifyToken, checkRole(["admin", "teacher"]), getStudents);
 router.get("/students/:studentId/grades", verifyToken, checkRole(["admin", "teacher", "student"]), getStudentGrades);
 
+// Student Published Results (admin/teacher can view specific student)
+router.get("/students/:studentId/published-results", verifyToken, checkRole(["admin", "teacher"]), getStudentPublishedResults);
+
 // ==================== STUDENT GUARDIANS ====================
 router.get("/students/:studentId/guardians", verifyToken, checkRole(["admin", "teacher"]), getStudentGuardians);
 router.post("/students/:studentId/guardians", verifyToken, checkRole(["admin"]), addStudentGuardian);
@@ -92,8 +107,31 @@ router.post("/teachers", verifyToken, checkRole(["admin"]), createTeacher);
 router.get("/teachers", verifyToken, checkRole(["admin"]), getTeachers);
 router.get("/teachers/:teacherId/schedule", verifyToken, checkRole(["admin", "teacher"]), getTeacherSchedule);
 
-// ==================== GRADES ====================
+// ==================== GRADES (Legacy) ====================
 router.get("/classes/:classId/subjects/:subjectId/grades", verifyToken, checkRole(["admin", "teacher"]), getClassGrades);
 router.post("/classes/:classId/subjects/:subjectId/grades", verifyToken, checkRole(["admin", "teacher"]), saveClassGrades);
 
+// ==================== RESULT MANAGEMENT - EXAMS ====================
+// Admin: Create, List, Update Exams
+router.post("/exams", verifyToken, checkRole(["admin"]), createExam);
+router.get("/exams", verifyToken, checkRole(["admin", "teacher", "student", "parent"]), getExams);
+router.put("/exams/:id", verifyToken, checkRole(["admin"]), updateExam);
+
+// Teacher: Get assigned subjects & classes
+router.get("/teacher/assigned-subjects", verifyToken, checkRole(["teacher"]), getTeacherAssignedSubjects);
+
+// Teacher/Admin: Get & Save grades per exam+class+subject
+router.get("/exams/:examId/classes/:classId/subjects/:subjectId/grades", verifyToken, checkRole(["admin", "teacher"]), getExamGrades);
+router.post("/exams/:examId/classes/:classId/subjects/:subjectId/grades", verifyToken, checkRole(["teacher"]), saveExamGrades);
+
+// Admin: View subject submission matrix for a class+exam
+router.get("/exams/:examId/classes/:classId/matrix", verifyToken, checkRole(["admin"]), getExamClassMatrix);
+
+// Admin: Publish result for a class+exam
+router.post("/exams/:examId/classes/:classId/publish", verifyToken, checkRole(["admin"]), publishClassResult);
+
+// Student/Parent: View own published results
+router.get("/results/my", verifyToken, checkRole(["student", "parent"]), getMyPublishedResults);
+
 export default router;
+

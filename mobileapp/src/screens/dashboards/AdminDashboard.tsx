@@ -238,18 +238,6 @@ const AdminDashboard: React.FC = () => {
                   activeOpacity={0.7}
                   onPress={() => {
                     setShowDrawer(false);
-                    navigation.navigate('AdminClasses' as never);
-                  }}
-                >
-                  <SchoolIcon size={22} color="#003fb1" />
-                  <Text style={styles.drawerNavItemText}>Manage Classes</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.drawerNavItem}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    setShowDrawer(false);
                     navigation.navigate('Announcements' as never);
                   }}
                 >

@@ -27,6 +27,7 @@ import {
 } from '../../assets/svgs';
 import attendanceService from '../../services/attendanceService';
 import communicationService from '../../services/communicationService';
+import feeService from '../../services/feeService';
 
 const ParentDashboard: React.FC = () => {
   const navigation = useNavigation();
@@ -34,14 +35,17 @@ const ParentDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
-  const [attendance, setAttendance] = useState('94%');
+  const [attendance, setAttendance] = useState('0%');
   const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [totalDue, setTotalDue] = useState(0);
+  const [nextDueDate, setNextDueDate] = useState<string | null>(null);
 
   const fetchParentData = async () => {
     try {
-      const [attData, commData] = await Promise.allSettled([
+      const [attData, commData, feeData] = await Promise.allSettled([
         attendanceService.getMyAttendance(),
         communicationService.getAnnouncements(),
+        feeService.getMyInvoices(),
       ]);
 
       if (attData.status === 'fulfilled' && attData.value) {
@@ -57,8 +61,31 @@ const ParentDashboard: React.FC = () => {
       if (commData.status === 'fulfilled' && Array.isArray(commData.value)) {
         setAnnouncements(commData.value);
       }
+
+      if (feeData.status === 'fulfilled' && feeData.value) {
+        const invs = feeData.value.invoices || [];
+        const sum = feeData.value.summary;
+        if (sum && typeof sum.totalDue === 'number') {
+          setTotalDue(sum.totalDue);
+        } else {
+          const dueSum = invs.reduce((acc: number, inv: any) => {
+            const total = (parseFloat(inv.total_amount) || 0) + (parseFloat(inv.late_fee) || 0);
+            const paid = parseFloat(inv.amount_paid) || 0;
+            return acc + Math.max(0, total - paid);
+          }, 0);
+          setTotalDue(dueSum);
+        }
+
+        const unpaidInvs = invs.filter((inv: any) => inv.status !== 'paid' && inv.due_date);
+        if (unpaidInvs.length > 0) {
+          unpaidInvs.sort((a: any, b: any) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime());
+          setNextDueDate(new Date(unpaidInvs[0].due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }));
+        } else {
+          setNextDueDate(null);
+        }
+      }
     } catch {
-      // Fallback
+      // Graceful fallback
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -197,7 +224,7 @@ const ParentDashboard: React.FC = () => {
           <View style={styles.infoTextContainer}>
             <Text style={styles.infoTitle}>Student Account Associated</Text>
             <Text style={styles.infoDesc}>
-              Linked to student record: {user?.name || 'Alex Johnson'} (Grade 11-A)
+              Linked to student record: {user?.name || 'Student'}
             </Text>
           </View>
         </View>
@@ -221,8 +248,8 @@ const ParentDashboard: React.FC = () => {
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statCol}>
-              <Text style={styles.statLabel}>CURRENT GPA</Text>
-              <Text style={styles.statValueBlue}>3.85</Text>
+              <Text style={styles.statLabel}>STATUS</Text>
+              <Text style={styles.statValueBlue}>Active</Text>
             </View>
           </View>
 
@@ -300,11 +327,17 @@ const ParentDashboard: React.FC = () => {
 
           <View style={styles.feeOverviewCard}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <AlertCircleIcon size={18} color="#ba1a1a" />
+              <AlertCircleIcon size={18} color={totalDue > 0 ? "#ba1a1a" : "#2e7d32"} />
               <Text style={styles.feeLabel}>Total Outstanding Amount</Text>
             </View>
-            <Text style={styles.feeValue}>$1,250.00</Text>
-            <Text style={styles.feeDueDate}>Next Payment Due: Oct 15, 2024</Text>
+            <Text style={[styles.feeValue, { color: totalDue > 0 ? '#ba1a1a' : '#2e7d32' }]}>
+              ₹{totalDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </Text>
+            <Text style={styles.feeDueDate}>
+              {totalDue > 0
+                ? (nextDueDate ? `Next Payment Due: ${nextDueDate}` : 'Payment Pending')
+                : 'All fee invoices paid'}
+            </Text>
           </View>
 
           <TouchableOpacity

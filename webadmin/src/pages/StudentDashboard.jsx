@@ -63,22 +63,8 @@ function Tab({ active, onClick, icon: Icon, label }) {
 // ══════════════════════════════════════════════════════════
 //  ATTENDANCE TAB
 // ══════════════════════════════════════════════════════════
-// ── Mock data (shown when API is unavailable) ──────────────
-const MOCK_ATTENDANCE = [
-  { id: 1, date: '2026-06-30', subject_name: 'Mathematics',        status: 'present', remarks: '' },
-  { id: 2, date: '2026-06-30', subject_name: 'Science',            status: 'present', remarks: '' },
-  { id: 3, date: '2026-06-27', subject_name: 'English',            status: 'present', remarks: '' },
-  { id: 4, date: '2026-06-27', subject_name: 'Mathematics',        status: 'late',    remarks: 'Bus delay' },
-  { id: 5, date: '2026-06-26', subject_name: 'Social Studies',     status: 'absent',  remarks: 'Medical leave' },
-  { id: 6, date: '2026-06-26', subject_name: 'Science',            status: 'present', remarks: '' },
-  { id: 7, date: '2026-06-25', subject_name: 'Hindi',              status: 'present', remarks: '' },
-  { id: 8, date: '2026-06-25', subject_name: 'Computer Science',   status: 'present', remarks: '' },
-  { id: 9, date: '2026-06-24', subject_name: 'Mathematics',        status: 'present', remarks: '' },
-  { id: 10, date: '2026-06-24', subject_name: 'English',           status: 'absent',  remarks: 'Sick' },
-  { id: 11, date: '2026-06-23', subject_name: 'Science',           status: 'present', remarks: '' },
-  { id: 12, date: '2026-06-23', subject_name: 'Social Studies',    status: 'present', remarks: '' },
-]
-
+//  ATTENDANCE TAB
+// ══════════════════════════════════════════════════════════
 function AttendanceTab() {
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
@@ -89,11 +75,11 @@ function AttendanceTab() {
     api.get('/attendance/my-attendance')
       .then(res => {
         const data = res.data.attendance || res.data.records || []
-        setRecords(data.length > 0 ? data : MOCK_ATTENDANCE)
+        setRecords(data)
       })
-      .catch(() => {
-        setRecords(MOCK_ATTENDANCE)
-        setError('')
+      .catch(err => {
+        setRecords([])
+        setError(err?.response?.data?.error || 'Failed to load attendance')
       })
       .finally(() => setLoading(false))
   }, [])
@@ -181,46 +167,6 @@ function AttendanceTab() {
 // ══════════════════════════════════════════════════════════
 //  ASSIGNMENTS TAB
 // ══════════════════════════════════════════════════════════
-// ── Mock assignments ───────────────────────────────────────
-const MOCK_ASSIGNMENTS = [
-  {
-    id: 1, title: 'Quadratic Equations – Problem Set 5',
-    subject_name: 'Mathematics', due_date: '2026-07-05',
-    created_at: '2026-06-20', max_marks: 20, marks_obtained: null,
-    submission_status: 'pending',
-    description: 'Solve all 15 problems from Chapter 5 and show full working.'
-  },
-  {
-    id: 2, title: 'Essay: Industrial Revolution',
-    subject_name: 'Social Studies', due_date: '2026-07-03',
-    created_at: '2026-06-18', max_marks: 30, marks_obtained: 26,
-    submission_status: 'graded',
-    description: 'Write a 500-word essay on the causes and effects of the Industrial Revolution.',
-    feedback: 'Good analysis. Work on structuring your conclusion.'
-  },
-  {
-    id: 3, title: 'Lab Report: Photosynthesis',
-    subject_name: 'Science', due_date: '2026-06-28',
-    created_at: '2026-06-15', max_marks: 25, marks_obtained: null,
-    submission_status: 'submitted',
-    description: 'Submit the lab report for the photosynthesis experiment.'
-  },
-  {
-    id: 4, title: 'Python Basics – Mini Project',
-    subject_name: 'Computer Science', due_date: '2026-06-20',
-    created_at: '2026-06-10', max_marks: 50, marks_obtained: null,
-    submission_status: 'pending',
-    description: 'Build a simple calculator using Python and submit the .py file.'
-  },
-  {
-    id: 5, title: 'Reading Comprehension – Chapter 4',
-    subject_name: 'English', due_date: '2026-07-08',
-    created_at: '2026-06-25', max_marks: 15, marks_obtained: null,
-    submission_status: 'pending',
-    description: 'Answer all questions from the comprehension passage on page 42.'
-  },
-]
-
 function AssignmentsTab() {
   const [assignments, setAssignments] = useState([])
   const [loading, setLoading] = useState(true)
@@ -232,11 +178,11 @@ function AssignmentsTab() {
     api.get('/assignments/my-assignments')
       .then(res => {
         const data = res.data.assignments || res.data || []
-        setAssignments(data.length > 0 ? data : MOCK_ASSIGNMENTS)
+        setAssignments(data)
       })
-      .catch(() => {
-        setAssignments(MOCK_ASSIGNMENTS)
-        setError('')
+      .catch(err => {
+        setAssignments([])
+        setError(err?.response?.data?.error || 'Failed to load assignments')
       })
       .finally(() => setLoading(false))
   }, [])
@@ -267,7 +213,7 @@ function AssignmentsTab() {
       {/* Assignment cards */}
       <div className="space-y-3">
         {assignments.length === 0 ? (
-          <div className="card text-center text-gray-400 py-10">No assignments found.</div>
+          <div className="card text-center text-gray-400 py-10">No assignments found for your class.</div>
         ) : assignments.map((a, i) => {
           const status = isOverdue(a) ? 'overdue' : getStatus(a)
           const isOpen = expanded === (a.id || i)
@@ -317,48 +263,6 @@ function AssignmentsTab() {
 // ══════════════════════════════════════════════════════════
 //  PAY FEES TAB
 // ══════════════════════════════════════════════════════════
-// ── Mock fee invoices ──────────────────────────────────────
-const MOCK_INVOICES = [
-  {
-    id: 'inv-001', invoice_number: 'INV-2026-0041',
-    due_date: '2026-07-15', class_name: 'Class X', section: 'A',
-    total_amount: 32000, status: 'unpaid',
-  },
-  {
-    id: 'inv-002', invoice_number: 'INV-2026-0019',
-    due_date: '2026-04-10', class_name: 'Class X', section: 'A',
-    total_amount: 32000, status: 'paid',
-  },
-  {
-    id: 'inv-003', invoice_number: 'INV-2026-0008',
-    due_date: '2026-01-10', class_name: 'Class X', section: 'A',
-    total_amount: 32000, status: 'paid',
-  },
-]
-const MOCK_ITEMS = {
-  'inv-001': [
-    { fee_type: 'tuition_fee',    amount: 18000 },
-    { fee_type: 'sports_fee',     amount:  3000 },
-    { fee_type: 'library_fee',    amount:  2000 },
-    { fee_type: 'lab_fee',        amount:  4000 },
-    { fee_type: 'transport_fee',  amount:  5000 },
-  ],
-  'inv-002': [
-    { fee_type: 'tuition_fee',    amount: 18000 },
-    { fee_type: 'sports_fee',     amount:  3000 },
-    { fee_type: 'library_fee',    amount:  2000 },
-    { fee_type: 'lab_fee',        amount:  4000 },
-    { fee_type: 'transport_fee',  amount:  5000 },
-  ],
-  'inv-003': [
-    { fee_type: 'tuition_fee',    amount: 18000 },
-    { fee_type: 'sports_fee',     amount:  3000 },
-    { fee_type: 'library_fee',    amount:  2000 },
-    { fee_type: 'lab_fee',        amount:  4000 },
-    { fee_type: 'transport_fee',  amount:  5000 },
-  ],
-}
-
 function FeesTab() {
   const [invoices, setInvoices] = useState([])
   const [items, setItems] = useState({})
@@ -375,13 +279,13 @@ function FeesTab() {
       .then(res => {
         const inv = res.data.invoices || []
         const itm = res.data.items || {}
-        setInvoices(inv.length > 0 ? inv : MOCK_INVOICES)
-        setItems(Object.keys(itm).length > 0 ? itm : MOCK_ITEMS)
+        setInvoices(inv)
+        setItems(itm)
       })
-      .catch(() => {
-        setInvoices(MOCK_INVOICES)
-        setItems(MOCK_ITEMS)
-        setError('')
+      .catch(err => {
+        setInvoices([])
+        setItems({})
+        setError(err?.response?.data?.error || 'Failed to load fee invoices')
       })
       .finally(() => setLoading(false))
   }, [])

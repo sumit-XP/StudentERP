@@ -16,6 +16,7 @@ import ParentPayments from './pages/ParentPayments.jsx'
 import ParentDashboard from './pages/ParentDashboard.jsx'
 import SuperAdmin from './pages/SuperAdmin.jsx'
 import Schedule from './pages/Schedule.jsx'
+import Exams from './pages/Exams.jsx'
 import Layout from './components/Layout.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 import { getUser } from './services/auth'
@@ -24,10 +25,10 @@ function HomeRedirect() {
   const user = getUser()
   if (!user) return <Navigate to="/login" replace />
   // Students and Parents share the same dashboard
-  if (user.role === 'student' || user.role === 'parent') return <Navigate to="/student-dashboard?tab=attendance" replace />
+  if (user.role === 'student' || user.role === 'parent') return <Navigate to="/exams" replace />
   if (user.role === 'super_admin') return <Navigate to="/super-admin" replace />
-  // teacher -> schedule
-  if (user.role === 'teacher') return <Navigate to="/schedule" replace />
+  // teacher -> exams
+  if (user.role === 'teacher') return <Navigate to="/exams" replace />
   // admin -> ops dashboard
   return <Navigate to="/dashboard" replace />
 }
@@ -55,6 +56,7 @@ export default function App() {
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/parent-payments" element={<ParentPayments />} />
           <Route path="/parent-dashboard" element={<ParentDashboard />} />
+          <Route path="/exams" element={<Exams />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/login" />} />

@@ -53,7 +53,7 @@ export const getAssignments = async (req, res) => {
     let query = `
       SELECT a.*, 
              c.name as class_name, c.section,
-             s.name as subject_name, s.code as subject_code,
+             s.name as subject_name, NULL as subject_code,
              u.name as teacher_name,
              COUNT(asub.id) as total_submissions,
              COUNT(CASE WHEN asub.status = 'graded' THEN 1 END) as graded_submissions
@@ -96,7 +96,7 @@ export const getAssignments = async (req, res) => {
     const parsedOffset = Math.max(0, parseInt(offset, 10) || 0);
 
     query += ` 
-      GROUP BY a.id, c.name, c.section, s.name, s.code, u.name
+      GROUP BY a.id, c.name, c.section, s.name, u.name
       ORDER BY a.created_at DESC 
       LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
     `;
@@ -159,7 +159,7 @@ export const getAssignmentDetails = async (req, res) => {
     const assignmentResult = await pool.query(
       `SELECT a.*, 
               c.name as class_name, c.section,
-              s.name as subject_name, s.code as subject_code,
+              s.name as subject_name, NULL as subject_code,
               u.name as teacher_name, u.email as teacher_email
        FROM assignments a
        JOIN classes c ON a.class_id = c.id
@@ -394,7 +394,7 @@ export const getMyAssignments = async (req, res) => {
 
     let query = `
       SELECT a.*, 
-             s.name as subject_name, s.code as subject_code,
+             s.name as subject_name, NULL as subject_code,
              u.name as teacher_name,
              asub.id as submission_id,
              asub.submitted_at,
@@ -497,7 +497,7 @@ export const getLearningResources = async (req, res) => {
     let query = `
       SELECT lr.*, 
              c.name as class_name, c.section,
-             s.name as subject_name, s.code as subject_code,
+             s.name as subject_name, NULL as subject_code,
              u.name as uploaded_by_name
       FROM learning_resources lr
       LEFT JOIN classes c ON lr.class_id = c.id

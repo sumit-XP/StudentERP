@@ -5,6 +5,7 @@ import { scopeToSchool, requireActiveSchool } from "../middleware/tenant.middlew
 import {
   createFeeStructure,
   listFeeStructure,
+  deleteFeeStructure,
   generateInvoices,
   listInvoices,
   getInvoiceById,
@@ -19,53 +20,56 @@ import {
   createDeposit,
   refundDeposit,
   listDeposits,
-  // Task 8: GST Reports
   getGSTReport,
   getGSTReportCSV,
-  // Student
-  getMyInvoices
+  getStudentFeeLedger,
+  getMyInvoices,
 } from "../modules/fees/fees.controller.js";
 
 const router = express.Router();
 
 // Apply tenant scoping to ALL fee routes
-router.use(verifyToken, checkRole(["admin", "teacher", "student", "super_admin"]), scopeToSchool, requireActiveSchool);
+router.use(verifyToken, checkRole(["admin", "teacher", "student", "parent", "super_admin"]), scopeToSchool, requireActiveSchool);
 
-// Fee Structure
+// ── Fee Structure ────────────────────────────────────────────
 router.post("/structure", checkRole(["admin"]), createFeeStructure);
 router.get("/structure", checkRole(["admin"]), listFeeStructure);
+router.delete("/structure/:id", checkRole(["admin"]), deleteFeeStructure);
 
-// Invoices
+// ── Invoices ─────────────────────────────────────────────────
 router.post("/invoices/generate", checkRole(["admin"]), generateInvoices);
 router.get("/invoices", checkRole(["admin"]), listInvoices);
 router.get("/invoices/:id", checkRole(["admin"]), getInvoiceById);
 
-// Payments & Receipts
+// ── Payments & Receipts ───────────────────────────────────────
 router.post("/payments", checkRole(["admin"]), recordPayment);
 router.get("/receipts/:paymentId.pdf", checkRole(["admin"]), generateReceiptPdf);
 
-// Razorpay
+// ── Razorpay (admin, parent, student can initiate) ────────────
 router.post("/razorpay/create-order", checkRole(["admin", "parent", "student"]), createRazorpayOrder);
 router.post("/razorpay/verify", checkRole(["admin", "parent", "student"]), verifyRazorpayPayment);
 
-// Reports
+// ── Reports ───────────────────────────────────────────────────
 router.get("/reports/collections", checkRole(["admin"]), collectionReport);
 router.get("/reports/dues", checkRole(["admin"]), duesReport);
 router.get("/reports/defaulters", checkRole(["admin"]), defaultersReport);
 
-// Refunds
+// ── Refunds ───────────────────────────────────────────────────
 router.post("/refunds", checkRole(["admin"]), createRefund);
 
-// Security Deposits
+// ── Security Deposits ─────────────────────────────────────────
 router.post("/deposits", checkRole(["admin"]), createDeposit);
 router.put("/deposits/:id/refund", checkRole(["admin"]), refundDeposit);
 router.get("/deposits", checkRole(["admin"]), listDeposits);
 
-// Task 8: GST/Tax Reports
+// ── GST/Tax Reports ───────────────────────────────────────────
 router.get("/reports/gst", checkRole(["admin"]), getGSTReport);
 router.get("/reports/gst/csv", checkRole(["admin"]), getGSTReportCSV);
 
-// Student / Parent: view own invoices
+// ── Admin: Student Fee Ledger ─────────────────────────────────
+router.get("/ledger/:studentId", checkRole(["admin"]), getStudentFeeLedger);
+
+// ── Student / Parent: own invoices & ledger ───────────────────
 router.get("/my-invoices", checkRole(["student", "parent"]), getMyInvoices);
 
 export default router;

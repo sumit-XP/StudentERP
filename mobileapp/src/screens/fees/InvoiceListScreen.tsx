@@ -15,7 +15,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { FeesStackParamList } from '../../navigation/features/FeesNavigator';
-import { feeService } from '../../services/feeService';
+import feeService from '../../services/feeService';
 
 type NavProp = StackNavigationProp<FeesStackParamList, 'InvoiceList'>;
 
@@ -39,11 +39,12 @@ const InvoiceListScreen: React.FC = () => {
 
   const fetchInvoices = useCallback(async () => {
     try {
-      const data = await feeService.getInvoices().catch(() => []);
-      if (Array.isArray(data) && data.length > 0) {
-        const mapped: InvoiceItem[] = data.map((inv: any, idx: number) => {
-          const amount = parseFloat(inv.total_amount || inv.amount) || 0;
-          const paidAmount = parseFloat(inv.paid_amount || inv.paidAmount) || (inv.status === 'paid' ? amount : 0);
+      const data = await feeService.getMyInvoices();
+      const rawInvoices = data.invoices || [];
+      if (Array.isArray(rawInvoices) && rawInvoices.length > 0) {
+        const mapped: InvoiceItem[] = rawInvoices.map((inv: any, idx: number) => {
+          const amount = parseFloat(inv.total_amount) + parseFloat(inv.late_fee || 0) || 0;
+          const paidAmount = parseFloat(inv.amount_paid) || 0;
           const rawStatus = (inv.status || 'unpaid').toLowerCase();
           const status: 'paid' | 'unpaid' | 'partial' = rawStatus === 'paid'
             ? 'paid'
@@ -53,11 +54,11 @@ const InvoiceListScreen: React.FC = () => {
 
           return {
             id: inv.id ? String(inv.id) : String(idx + 1),
-            studentName: inv.student_name || inv.studentName || 'Student',
-            feeType: inv.title || inv.fee_type || inv.description || 'Academic Fees',
+            studentName: inv.student_name || 'Student',
+            feeType: inv.invoice_number || `Invoice #${inv.id}`,
             amount,
             paidAmount,
-            dueDate: inv.due_date ? new Date(inv.due_date).toLocaleDateString() : 'N/A',
+            dueDate: inv.due_date ? new Date(inv.due_date).toLocaleDateString('en-IN') : 'N/A',
             status,
           };
         });
@@ -67,6 +68,7 @@ const InvoiceListScreen: React.FC = () => {
       }
     } catch (e) {
       console.error('Error fetching invoices:', e);
+      setInvoices([]);
     } finally {
       setLoading(false);
       setRefreshing(false);

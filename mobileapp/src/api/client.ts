@@ -2,14 +2,17 @@ import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse, AxiosE
 import EncryptedStorage from 'react-native-encrypted-storage';
 import { Platform } from 'react-native';
 
-// For wired connection via USB (with `adb reverse tcp:5000 tcp:5000`), emulator, or local network:
-const DEFAULT_HOST = 'http://localhost:5000/api';
+// Ngrok tunnel URL for remote / standalone APK usage
+const DEFAULT_HOST = 'https://ambrose-unfulgent-bolsteringly.ngrok-free.dev/api';
 const API_BASE_URL = process.env.API_BASE_URL || DEFAULT_HOST;
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
-  headers: { 'Content-Type': 'application/json' },
+  timeout: 15000,
+  headers: {
+    'Content-Type': 'application/json',
+    'ngrok-skip-browser-warning': 'true',
+  },
 });
 
 // Request interceptor — attach JWT

@@ -4,7 +4,7 @@ import {
   LayoutDashboard, BookOpen, School, ClipboardCheck, FileText,
   Megaphone, BarChart3, DollarSign, Users, GraduationCap,
   FileBarChart, MessageSquare, Bell, LogOut, Menu, X,
-  Calendar, Wallet, Home, Search, ShieldCheck, PlusSquare
+  Calendar, Wallet, Home, Search, ShieldCheck, PlusSquare, ClipboardList
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -53,10 +53,10 @@ export default function Layout() {
       {/* ── Student / Parent (shared dashboard) ── */}
       {(user?.role === 'student' || user?.role === 'parent') && (
         <NavSection title={user?.role === 'parent' ? 'Parent Portal' : 'Student Portal'} expanded={sidebarOpen}>
-          <NavItem to="/student-dashboard?tab=attendance" label="My Attendance" icon={ClipboardCheck} expanded={sidebarOpen} onNavigate={onNavigate} active={location.pathname === '/student-dashboard' && location.search === '?tab=attendance'} />
-          <NavItem to="/student-dashboard?tab=assignments" label="Assignments"   icon={FileText}       expanded={sidebarOpen} onNavigate={onNavigate} active={location.pathname === '/student-dashboard' && location.search === '?tab=assignments'} />
-          <NavItem to="/reports"           label="My Report Card" icon={FileBarChart}  expanded={sidebarOpen} onNavigate={onNavigate} />
-          <NavItem to="/student-dashboard?tab=fees" label="My Fees"       icon={DollarSign}     expanded={sidebarOpen} onNavigate={onNavigate} active={location.pathname === '/student-dashboard' && location.search === '?tab=fees'} />
+          <NavItem to="/exams"                             label="My Results"       icon={ClipboardList}   expanded={sidebarOpen} onNavigate={onNavigate} />
+          <NavItem to="/student-dashboard?tab=attendance" label="My Attendance"    icon={ClipboardCheck}  expanded={sidebarOpen} onNavigate={onNavigate} active={location.pathname === '/student-dashboard' && location.search === '?tab=attendance'} />
+          <NavItem to="/student-dashboard?tab=assignments" label="Assignments"      icon={FileText}        expanded={sidebarOpen} onNavigate={onNavigate} active={location.pathname === '/student-dashboard' && location.search === '?tab=assignments'} />
+          <NavItem to="/student-dashboard?tab=fees"       label="My Fees"         icon={DollarSign}      expanded={sidebarOpen} onNavigate={onNavigate} active={location.pathname === '/student-dashboard' && location.search === '?tab=fees'} />
         </NavSection>
       )}
 
@@ -68,9 +68,10 @@ export default function Layout() {
           </NavSection>
 
           <NavSection title="Academics" expanded={sidebarOpen}>
-            <NavItem to="/attendance"   label="Mark Attendance"    icon={ClipboardCheck} expanded={sidebarOpen} onNavigate={onNavigate} />
-            <NavItem to="/assignments"  label="Create Assignments"  icon={PlusSquare}     expanded={sidebarOpen} onNavigate={onNavigate} />
-            <NavItem to="/reports"      label="Reports"             icon={FileBarChart}   expanded={sidebarOpen} onNavigate={onNavigate} />
+            <NavItem to="/exams"        label="Exams & Results"      icon={ClipboardList}  expanded={sidebarOpen} onNavigate={onNavigate} />
+            <NavItem to="/attendance"   label="Mark Attendance"      icon={ClipboardCheck} expanded={sidebarOpen} onNavigate={onNavigate} />
+            <NavItem to="/assignments"  label="Create Assignments"   icon={PlusSquare}     expanded={sidebarOpen} onNavigate={onNavigate} />
+            <NavItem to="/reports"      label="Reports"              icon={FileBarChart}   expanded={sidebarOpen} onNavigate={onNavigate} />
           </NavSection>
 
           <NavSection title="Communication" expanded={sidebarOpen}>
@@ -88,9 +89,10 @@ export default function Layout() {
           </NavSection>
 
           <NavSection title="Academics" expanded={sidebarOpen}>
-            <NavItem to="/classes"     label="Classes"     icon={School}         expanded={sidebarOpen} onNavigate={onNavigate} />
-            <NavItem to="/attendance"  label="Attendance"  icon={ClipboardCheck} expanded={sidebarOpen} onNavigate={onNavigate} />
-            <NavItem to="/reports"     label="Reports"     icon={FileBarChart}   expanded={sidebarOpen} onNavigate={onNavigate} />
+            <NavItem to="/exams"      label="Exams & Results" icon={ClipboardList}   expanded={sidebarOpen} onNavigate={onNavigate} />
+            <NavItem to="/classes"     label="Classes"         icon={School}          expanded={sidebarOpen} onNavigate={onNavigate} />
+            <NavItem to="/attendance"  label="Attendance"      icon={ClipboardCheck}  expanded={sidebarOpen} onNavigate={onNavigate} />
+            <NavItem to="/reports"     label="Reports"         icon={FileBarChart}    expanded={sidebarOpen} onNavigate={onNavigate} />
           </NavSection>
 
           <NavSection title="Operations" expanded={sidebarOpen}>

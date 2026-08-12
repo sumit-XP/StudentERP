@@ -6,502 +6,294 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  TextInput,
   Alert,
   SafeAreaView,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { FeesStackParamList } from '../../navigation/features/FeesNavigator';
+import feeService from '../../services/feeService';
+import RazorpayCheckout from 'react-native-razorpay';
 
 type NavProp = StackNavigationProp<FeesStackParamList, 'InvoiceDetail'>;
 type RoutePropType = RouteProp<FeesStackParamList, 'InvoiceDetail'>;
 
-interface InvoiceDetail {
-  id: string;
-  studentName: string;
-  className: string;
-  feeType: string;
-  amount: number;
-  paidAmount: number;
-  dueDate: string;
-  status: 'paid' | 'unpaid' | 'partial';
-  items: { id: string; feeType: string; amount: number }[];
-}
+const fmt = (d: string) => {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+const fmtAmount = (n: number) =>
+  `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
+const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
+  paid:    { bg: '#d1fae5', text: '#065f46' },
+  partial: { bg: '#fef3c7', text: '#92400e' },
+  unpaid:  { bg: '#fee2e2', text: '#991b1b' },
+};
 
 const InvoiceDetailScreen: React.FC = () => {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RoutePropType>();
   const { invoiceId } = route.params;
 
-  const [invoice, setInvoice] = useState<InvoiceDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'online'>('cash');
-  const [cashAmount, setCashAmount] = useState('');
-  const [receiptRef, setReceiptRef] = useState('');
-  const [processing, setProcessing] = useState(false);
+  const [loading, setLoading]   = useState(true);
+  const [invoice, setInvoice]   = useState<any>(null);
+  const [items, setItems]       = useState<any[]>([]);
+  const [payments, setPayments] = useState<any[]>([]);
+  const [totalPaid, setTotalPaid] = useState(0);
+  const [totalDue, setTotalDue]   = useState(0);
+  const [paying, setPaying]       = useState(false);
 
-  useEffect(() => {
-    // Simulate loading details based on invoiceId
-    const timer = setTimeout(() => {
-      setInvoice({
-        id: invoiceId,
-        studentName:
-          invoiceId === '2'
-            ? 'Beatrice Silva'
-            : invoiceId === '3'
-            ? 'Charlie Vance'
-            : 'Alex Rivera',
-        className: 'Grade 10-B',
-        feeType: invoiceId === '3' ? 'Sports & Library Fees' : 'Tuition Fees Q3',
-        amount: invoiceId === '3' ? 3500 : 15000,
-        paidAmount: invoiceId === '2' ? 7500 : 0,
-        dueDate: invoiceId === '3' ? 'Nov 15, 2023' : 'Oct 30, 2023',
-        status: invoiceId === '2' ? 'partial' : 'unpaid',
-        items: [
-          { id: '1', feeType: 'Tuition Core Fee', amount: invoiceId === '3' ? 2500 : 12000 },
-          { id: '2', feeType: 'Laboratory Charges', amount: invoiceId === '3' ? 500 : 2000 },
-          { id: '3', feeType: 'Exam Materials', amount: invoiceId === '3' ? 500 : 1000 },
-        ],
-      });
-      setLoading(false);
-    }, 400);
-
-    return () => clearTimeout(timer);
-  }, [invoiceId]);
-
-  const handleRecordCashPayment = async () => {
-    if (!invoice) {
-      return;
-    }
-
-    const amountNum = parseFloat(cashAmount);
-    if (isNaN(amountNum) || amountNum <= 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid cash amount to pay.');
-      return;
-    }
-
-    const remaining = invoice.amount - invoice.paidAmount;
-    if (amountNum > remaining) {
-      Alert.alert('Overpayment', `Enter an amount equal to or less than ₹${remaining}.`);
-      return;
-    }
-
-    setProcessing(true);
+  const loadDetail = async () => {
+    setLoading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      const newPaid = invoice.paidAmount + amountNum;
-      const newStatus = newPaid >= invoice.amount ? 'paid' : 'partial';
-
-      Alert.alert(
-        'Payment Recorded',
-        `Cash payment of ₹${amountNum} successfully recorded!\nReceipt Reference: ${
-          receiptRef || 'N/A'
-        }`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              setInvoice({
-                ...invoice,
-                paidAmount: newPaid,
-                status: newStatus,
-              });
-              navigation.goBack();
-            },
-          },
-        ],
-      );
-    } catch {
-      Alert.alert('Error', 'Failed to process cash payment.');
+      const data = await feeService.getInvoiceDetail(invoiceId);
+      setInvoice(data.invoice || null);
+      setItems(data.items || []);
+      setPayments(data.payments || []);
+      setTotalPaid(parseFloat(data.totalPaid) || 0);
+      setTotalDue(parseFloat(data.totalDue) || 0);
+    } catch (e: any) {
+      Alert.alert('Error', e?.response?.data?.error || 'Failed to load invoice');
+      navigation.goBack();
     } finally {
-      setProcessing(false);
-      setCashAmount('');
-      setReceiptRef('');
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadDetail(); }, [invoiceId]);
+
+  const handlePayOnline = async () => {
+    if (totalDue <= 0) {
+      Alert.alert('No dues', 'This invoice is fully paid.');
+      return;
+    }
+    setPaying(true);
+    try {
+      const order = await feeService.createRazorpayOrder(invoiceId);
+      const options = {
+        description: `Invoice ${invoice?.invoice_number}`,
+        image:       'https://i.imgur.com/3g7nmJC.png',
+        currency:    'INR',
+        key:         order.keyId || order.key_id,
+        amount:      String(order.amount),
+        name:        'School ERP',
+        order_id:    order.orderId || order.order_id,
+        theme:       { color: '#1565c0' },
+        prefill:     {},
+      };
+      const data = await RazorpayCheckout.open(options);
+      await feeService.verifyRazorpayPayment({
+        invoiceId,
+        razorpayOrderId:   data.razorpay_order_id,
+        razorpayPaymentId: data.razorpay_payment_id,
+        razorpaySignature: data.razorpay_signature,
+      });
+      Alert.alert('✅ Payment Successful!', 'Your payment has been verified.');
+      await loadDetail();
+    } catch (err: any) {
+      if (err?.code && err?.description) {
+        Alert.alert('Cancelled', err.description || 'Payment was not completed.');
+      } else {
+        Alert.alert('Error', err?.response?.data?.error || 'Payment failed.');
+      }
+    } finally {
+      setPaying(false);
     }
   };
 
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#003fb1" />
+        <ActivityIndicator size="large" color="#1565c0" />
       </View>
     );
   }
 
-  if (!invoice) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.error}>Invoice not found.</Text>
-      </View>
-    );
-  }
+  if (!invoice) return null;
 
-  const balance = invoice.amount - invoice.paidAmount;
+  const totalBilled = parseFloat(invoice.total_amount) + parseFloat(invoice.late_fee || 0);
+  const sc = STATUS_COLOR[invoice.status] || STATUS_COLOR.unpaid;
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Ledger Header */}
-        <View style={styles.invoiceHeaderCard}>
-          <View style={styles.cardHeaderRow}>
+    <SafeAreaView style={styles.root}>
+      <ScrollView contentContainerStyle={styles.container}>
+        {/* Header */}
+        <View style={styles.headerCard}>
+          <View style={styles.headerTop}>
             <View>
-              <Text style={styles.invoiceTitle}>{invoice.studentName}</Text>
-              <Text style={styles.invoiceSubtitle}>
-                {invoice.className} • {invoice.feeType}
+              <Text style={styles.invoiceNumber}>{invoice.invoice_number}</Text>
+              <Text style={styles.studentName}>{invoice.student_name}</Text>
+              <Text style={styles.studentMeta}>
+                {invoice.class_name} {invoice.section}  ·  {invoice.student_number}
               </Text>
             </View>
-            <View
-              style={[
-                styles.statusBadge,
-                invoice.status === 'paid' && styles.badgePaid,
-                invoice.status === 'partial' && styles.badgePartial,
-                invoice.status === 'unpaid' && styles.badgeUnpaid,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.statusBadgeText,
-                  invoice.status === 'paid' && styles.textPaid,
-                  invoice.status === 'partial' && styles.textPartial,
-                  invoice.status === 'unpaid' && styles.textUnpaid,
-                ]}
-              >
-                {invoice.status.toUpperCase()}
-              </Text>
+            <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
+              <Text style={[styles.statusText, { color: sc.text }]}>{invoice.status.toUpperCase()}</Text>
             </View>
+          </View>
+          <View style={styles.headerDates}>
+            <Text style={styles.dateLabel}>Issued: {fmt(invoice.invoice_date)}</Text>
+            <Text style={styles.dateLabel}>Due: {fmt(invoice.due_date)}</Text>
           </View>
         </View>
 
-        {/* Fee breakdown list */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Invoice Ledger Details</Text>
-          {invoice.items.map((item) => (
-            <View key={item.id} style={styles.itemRow}>
-              <Text style={styles.itemLabel}>{item.feeType}</Text>
-              <Text style={styles.itemAmount}>₹{item.amount.toLocaleString()}</Text>
+        {/* Fee Breakdown */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Fee Breakdown</Text>
+          {items.map((it: any, i: number) => (
+            <View key={i} style={styles.itemRow}>
+              <Text style={styles.itemType}>{it.fee_type}</Text>
+              <Text style={styles.itemAmount}>{fmtAmount(parseFloat(it.amount))}</Text>
             </View>
           ))}
-
           <View style={styles.divider} />
-
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryLabel}>Total Amount</Text>
-            <Text style={styles.summaryVal}>₹{invoice.amount.toLocaleString()}</Text>
-          </View>
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryLabel}>Paid To Date</Text>
-            <Text style={[styles.summaryVal, styles.textGreen]}>
-              ₹{invoice.paidAmount.toLocaleString()}
-            </Text>
-          </View>
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryLabel}>Balance Due</Text>
-            <Text style={[styles.summaryVal, styles.textRed, styles.fontExtraBold]}>
-              ₹{balance.toLocaleString()}
-            </Text>
-          </View>
+          {[
+            { label: 'Total Billed', value: fmtAmount(totalBilled), bold: false },
+            { label: 'Amount Paid',  value: fmtAmount(totalPaid),   bold: false, color: '#2e7d32' },
+            { label: 'Balance Due',  value: fmtAmount(totalDue),    bold: true,  color: totalDue > 0 ? '#c62828' : '#2e7d32' },
+          ].map(r => (
+            <View key={r.label} style={styles.summaryRow}>
+              <Text style={[styles.summaryLabel, r.bold && styles.bold]}>{r.label}</Text>
+              <Text style={[styles.summaryValue, r.bold && styles.bold, r.color ? { color: r.color } : {}]}>{r.value}</Text>
+            </View>
+          ))}
         </View>
 
-        {/* Payment Portal Composer */}
+        {/* Payment History */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Payment History</Text>
+          {payments.length === 0 ? (
+            <Text style={styles.emptyText}>No payments recorded yet.</Text>
+          ) : (
+            payments.map((p: any, i: number) => (
+              <View key={i} style={styles.paymentRow}>
+                <View>
+                  <Text style={styles.paymentAmount}>{fmtAmount(parseFloat(p.amount_paid))}</Text>
+                  <Text style={styles.paymentMeta}>
+                    {(p.payment_method || '').toUpperCase()}  ·  {fmt(p.payment_date)}
+                  </Text>
+                  {p.receipt_number ? <Text style={styles.paymentReceipt}>{p.receipt_number}</Text> : null}
+                  {p.remarks ? <Text style={styles.paymentRemarks}>{p.remarks}</Text> : null}
+                </View>
+                <View style={styles.paidTag}>
+                  <Text style={styles.paidTagText}>✓ PAID</Text>
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+
+        {/* Actions */}
         {invoice.status !== 'paid' && (
-          <View style={styles.paymentComposerCard}>
-            <Text style={styles.sectionTitle}>Record Payment Transaction</Text>
-
-            {/* Segment Tab Selector */}
-            <View style={styles.segmentContainer}>
-              <TouchableOpacity
-                style={[styles.segmentBtn, paymentMethod === 'cash' && styles.segmentBtnActive]}
-                onPress={() => setPaymentMethod('cash')}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[styles.segmentText, paymentMethod === 'cash' && styles.segmentTextActive]}
-                >
-                  Cash Payment
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.segmentBtn, paymentMethod === 'online' && styles.segmentBtnActive]}
-                onPress={() => setPaymentMethod('online')}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.segmentText,
-                    paymentMethod === 'online' && styles.segmentTextActive,
-                  ]}
-                >
-                  Pay Online
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {paymentMethod === 'cash' ? (
-              <View style={styles.cashForm}>
-                <View style={styles.formGroup}>
-                  <Text style={styles.inputLabel}>CASH AMOUNT RECEIVED (₹)</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    keyboardType="numeric"
-                    value={cashAmount}
-                    onChangeText={setCashAmount}
-                    placeholder={`e.g. ${balance}`}
-                    placeholderTextColor="#737686"
-                    editable={!processing}
-                  />
-                </View>
-
-                <View style={styles.formGroup}>
-                  <Text style={styles.inputLabel}>RECEIPT / REFERENCE NUMBER</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    value={receiptRef}
-                    onChangeText={setReceiptRef}
-                    placeholder="e.g. REC-98725"
-                    placeholderTextColor="#737686"
-                    editable={!processing}
-                  />
-                </View>
-
-                <TouchableOpacity
-                  style={styles.payBtn}
-                  onPress={handleRecordCashPayment}
-                  disabled={processing}
-                  activeOpacity={0.85}
-                >
-                  {processing ? (
-                    <ActivityIndicator color="#ffffff" size="small" />
-                  ) : (
-                    <Text style={styles.payBtnText}>Record Cash Payment</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
+          <TouchableOpacity
+            style={[styles.payBtn, paying && styles.payBtnDisabled]}
+            onPress={handlePayOnline}
+            disabled={paying}
+          >
+            {paying ? (
+              <ActivityIndicator color="#fff" />
             ) : (
-              <View style={styles.onlineSection}>
-                <Text style={styles.onlineDesc}>
-                  Generate payment invoice checkout link and send gateway instructions to student
-                  registered email details.
-                </Text>
-                <TouchableOpacity
-                  style={styles.payBtn}
-                  onPress={() => navigation.navigate('OnlinePayment', { invoiceId: invoice.id })}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.payBtnText}>Proceed to Checkout</Text>
-                </TouchableOpacity>
-              </View>
+              <Text style={styles.payBtnText}>💳  Pay {fmtAmount(totalDue)} Online (Razorpay)</Text>
             )}
+          </TouchableOpacity>
+        )}
+
+        {invoice.status === 'paid' && (
+          <View style={styles.paidBanner}>
+            <Text style={styles.paidBannerText}>✅ This invoice is fully paid</Text>
           </View>
         )}
+
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Text style={styles.backBtnText}>← Back to Invoices</Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f9ff',
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 40,
-  },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  error: {
-    fontSize: 14,
-    color: '#ba1a1a',
-  },
-  invoiceHeaderCard: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#c3c5d7',
-    borderRadius: 16,
-    padding: 16,
+  root:      { flex: 1, backgroundColor: '#f8faff' },
+  center:    { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  container: { padding: 16, paddingBottom: 40 },
+
+  headerCard: {
+    backgroundColor: '#1565c0',
+    borderRadius: 18,
+    padding: 18,
     marginBottom: 16,
   },
-  cardHeaderRow: {
+  headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  invoiceTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#121c28',
-  },
-  invoiceSubtitle: {
-    fontSize: 12,
-    color: '#737686',
-    marginTop: 2,
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  badgePaid: {
-    backgroundColor: '#82f5c1',
-  },
-  badgePartial: {
-    backgroundColor: '#ffdcc3',
-  },
-  badgeUnpaid: {
-    backgroundColor: '#ffdad6',
-  },
-  statusBadgeText: {
-    fontSize: 8,
-    fontWeight: '800',
-  },
-  textPaid: {
-    color: '#005137',
-  },
-  textUnpaid: {
-    color: '#ba1a1a',
-  },
-  textPartial: {
-    color: '#6e3900',
-  },
-  sectionCard: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#c3c5d7',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#121c28',
+    alignItems: 'flex-start',
     marginBottom: 12,
   },
-  itemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-  },
-  itemLabel: {
-    fontSize: 13,
-    color: '#434654',
-  },
-  itemAmount: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#121c28',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#f8f9ff',
-    marginVertical: 12,
-  },
-  summaryItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-  },
-  summaryLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#737686',
-  },
-  summaryVal: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#121c28',
-  },
-  textGreen: {
-    color: '#006c4a',
-  },
-  textRed: {
-    color: '#ba1a1a',
-  },
-  fontExtraBold: {
-    fontWeight: '800',
-  },
-  paymentComposerCard: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#c3c5d7',
+  invoiceNumber: { fontSize: 13, color: '#93c5fd', fontWeight: '700', fontVariant: ['tabular-nums'] },
+  studentName:   { fontSize: 20, fontWeight: '800', color: '#fff', marginTop: 2 },
+  studentMeta:   { fontSize: 12, color: '#bfdbfe', marginTop: 3 },
+  statusBadge:   { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
+  statusText:    { fontSize: 11, fontWeight: '800' },
+  headerDates:   { flexDirection: 'row', gap: 16 },
+  dateLabel:     { fontSize: 12, color: '#bfdbfe' },
+
+  section: {
+    backgroundColor: '#fff',
     borderRadius: 16,
     padding: 16,
+    marginBottom: 12,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
   },
-  segmentContainer: {
+  sectionTitle: { fontSize: 12, fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', marginBottom: 12, letterSpacing: 0.5 },
+
+  itemRow:    { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  itemType:   { fontSize: 14, color: '#374151' },
+  itemAmount: { fontSize: 14, fontWeight: '600', color: '#111827' },
+
+  divider: { height: 1, backgroundColor: '#e5e7eb', marginVertical: 8 },
+
+  summaryRow:   { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  summaryLabel: { fontSize: 14, color: '#6b7280' },
+  summaryValue: { fontSize: 14, color: '#374151' },
+  bold:         { fontWeight: '700' },
+
+  emptyText: { fontSize: 13, color: '#9ca3af', fontStyle: 'italic' },
+
+  paymentRow: {
     flexDirection: 'row',
-    backgroundColor: '#f8f9ff',
-    borderWidth: 1,
-    borderColor: '#c3c5d7',
-    borderRadius: 10,
-    padding: 2,
-    marginBottom: 16,
-  },
-  segmentBtn: {
-    flex: 1,
-    paddingVertical: 8,
+    justifyContent: 'space-between',
     alignItems: 'center',
-    borderRadius: 8,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
   },
-  segmentBtnActive: {
-    backgroundColor: '#003fb1',
-  },
-  segmentText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#737686',
-  },
-  segmentTextActive: {
-    color: '#ffffff',
-  },
-  cashForm: {
-    gap: 12,
-  },
-  formGroup: {
-    width: '100%',
-  },
-  inputLabel: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#003fb1',
-    letterSpacing: 0.5,
-    marginBottom: 6,
-  },
-  textInput: {
-    backgroundColor: '#f8f9ff',
-    borderWidth: 1,
-    borderColor: '#c3c5d7',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 40,
-    fontSize: 13,
-    color: '#121c28',
-  },
+  paymentAmount:  { fontSize: 15, fontWeight: '700', color: '#065f46' },
+  paymentMeta:    { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  paymentReceipt: { fontSize: 11, color: '#9ca3af', fontFamily: 'monospace', marginTop: 1 },
+  paymentRemarks: { fontSize: 11, color: '#9ca3af', fontStyle: 'italic', marginTop: 1 },
+  paidTag: { backgroundColor: '#d1fae5', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  paidTagText: { fontSize: 11, color: '#065f46', fontWeight: '700' },
+
   payBtn: {
-    backgroundColor: '#003fb1',
-    height: 46,
-    borderRadius: 8,
+    backgroundColor: '#1565c0',
+    borderRadius: 14,
+    padding: 16,
     alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 10,
+    marginBottom: 12,
   },
-  payBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  onlineSection: {
-    gap: 12,
-  },
-  onlineDesc: {
-    fontSize: 12,
-    color: '#434654',
-    lineHeight: 18,
-  },
+  payBtnDisabled: { opacity: 0.6 },
+  payBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+
+  paidBanner: { backgroundColor: '#d1fae5', borderRadius: 14, padding: 16, alignItems: 'center', marginBottom: 12 },
+  paidBannerText: { color: '#065f46', fontWeight: '700', fontSize: 15 },
+
+  backBtn: { alignItems: 'center', padding: 12 },
+  backBtnText: { color: '#1565c0', fontWeight: '600', fontSize: 14 },
 });
 
 export default InvoiceDetailScreen;

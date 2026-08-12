@@ -183,28 +183,64 @@ export default function Classes() {
       </div>
 
       <div className="card">
-        <div className="font-semibold mb-2">Class Subjects</div>
+        <div className="font-semibold mb-2">Class Subjects & Teacher Assignment</div>
         <div className="mb-4">
           <div className="label">Select Class to Manage Subjects</div>
           <select className="input max-w-sm" value={selectedClassId} onChange={e=>setSelectedClassId(e.target.value)}>
             <option value="">-- Select Class --</option>
-            {list.map(c => <option key={c.id} value={c.id}>{c.name} (Grade {c.grade_level})</option>)}
+            {list.map(c => <option key={c.id} value={c.id}>{c.name} {c.section} (Grade {c.grade_level})</option>)}
           </select>
         </div>
 
         {selectedClassId && (
           <div className="space-y-4">
-            <div className="border p-4 rounded-md">
-              <div className="font-medium mb-2">Subjects List</div>
-              {subjects.length === 0 ? <div className="text-gray-500 text-sm">No subjects created for this class yet.</div> : (
-                <ul className="list-disc pl-5 space-y-1">
-                  {subjects.map(s => <li key={s.id}>{s.name}</li>)}
-                </ul>
+            <div className="border border-gray-200 p-4 rounded-xl bg-gray-50">
+              <div className="font-medium mb-3">Assigned Subjects for Selected Class</div>
+              {subjects.length === 0 ? <div className="text-gray-500 text-sm">No subjects created for this class yet. Add one below.</div> : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm bg-white rounded-lg border border-gray-200">
+                    <thead className="bg-gray-100 border-b border-gray-200">
+                      <tr>
+                        <th className="text-left p-2.5 font-semibold text-gray-700">Subject Name</th>
+                        <th className="text-left p-2.5 font-semibold text-gray-700">Assigned Teacher</th>
+                        <th className="text-left p-2.5 font-semibold text-gray-700">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {subjects.map(s => (
+                        <tr key={s.id}>
+                          <td className="p-2.5 font-medium text-gray-900">{s.name}</td>
+                          <td className="p-2.5">
+                            <select
+                              className="input text-sm py-1.5 max-w-xs"
+                              value={s.teacher_id || ''}
+                              onChange={async (e) => {
+                                const newTeacherId = e.target.value ? Number(e.target.value) : null
+                                try {
+                                  await api.put(`/academic/subjects/${s.id}`, { teacherId: newTeacherId })
+                                  loadSubjects(selectedClassId)
+                                } catch (err) {
+                                  alert(err?.response?.data?.error || 'Failed to update subject teacher')
+                                }
+                              }}
+                            >
+                              <option value="">-- Assign Teacher --</option>
+                              {teachers.map(t => <option key={t.id} value={t.user_id}>{t.name}</option>)}
+                            </select>
+                          </td>
+                          <td className="p-2.5 text-xs text-gray-500">
+                            {s.teacher_name ? <span className="text-green-600 font-semibold">Assigned</span> : <span className="text-amber-600 italic">Unassigned</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
 
-            <form onSubmit={onCreateSubject} className="flex gap-2 items-end">
-              <div>
+            <form onSubmit={onCreateSubject} className="flex flex-wrap gap-3 items-end bg-white p-4 rounded-xl border border-gray-200">
+              <div className="flex-1 min-w-[200px]">
                 <div className="label">New Subject Name</div>
                 <input className="input" value={subjectName} onChange={e=>setSubjectName(e.target.value)} required placeholder="e.g. Mathematics" />
               </div>

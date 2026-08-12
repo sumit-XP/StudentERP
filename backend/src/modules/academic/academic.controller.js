@@ -263,6 +263,21 @@ export const updateClass = async (req, res) => {
     const { id } = req.params;
     const { name, gradeLevel, section, academicYearId, classTeacherId, maxStudents } = req.body;
 
+    const existingRes = await pool.query(
+      `SELECT * FROM classes WHERE id = $1 AND school_id = $2`,
+      [id, req.tenantId]
+    );
+
+    if (existingRes.rows.length === 0) {
+      return res.status(404).json({ error: "Class not found" });
+    }
+
+    const existing = existingRes.rows[0];
+
+    const targetClassTeacherId = classTeacherId !== undefined
+      ? (classTeacherId === null || classTeacherId === '' ? null : Number(classTeacherId))
+      : existing.class_teacher_id;
+
     const result = await pool.query(
       `UPDATE classes 
        SET name = COALESCE($1, name),
@@ -272,12 +287,17 @@ export const updateClass = async (req, res) => {
            class_teacher_id = $5,
            max_students = COALESCE($6, max_students)
        WHERE id = $7 AND school_id = $8 RETURNING *`,
-      [name, gradeLevel, section, academicYearId, classTeacherId, maxStudents, id, req.tenantId]
+      [
+        name || null,
+        gradeLevel ? Number(gradeLevel) : null,
+        section !== undefined && section !== null ? section : null,
+        academicYearId ? Number(academicYearId) : null,
+        targetClassTeacherId,
+        maxStudents ? Number(maxStudents) : null,
+        id,
+        req.tenantId
+      ]
     );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Class not found" });
-    }
 
     res.json({
       message: "Class updated successfully",
@@ -949,5 +969,494 @@ export const saveClassGrades = async (req, res) => {
     res.status(500).json({ error: "Server error" });
   } finally {
     client.release();
+  }
+};
+
+// ==========================================
+// RESULT MANAGEMENT - EXAMS (ADMIN)
+// ==========================================
+
+// Create Exam
+export const createExam = async (req, res) => {
+  try {
+    const { title, examType, academicYearId, startDate, endDate, maxMarks = 100 } = req.body;
+    if (!title || !examType) {
+      return res.status(400).json({ error: 'title and examType are required' });
+    }
+    const result = await pool.query(
+      `INSERT INTO exams (school_id, title, exam_type, academic_year_id, start_date, end_date, max_marks, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [req.tenantId, title, examType, academicYearId || null, startDate || null, endDate || null, maxMarks, req.user.id]
+    );
+    res.status(201).json({ message: 'Exam created successfully', exam: result.rows[0] });
+  } catch (err) {
+    console.error('Create exam error:', err);
+    res.status(500).json({ error: 'Failed to create exam' });
+  }
+};
+
+// Get All Exams
+export const getExams = async (req, res) => {
+  try {
+    const { academicYearId, isActive } = req.query;
+    let query = `
+      SELECT e.*, ay.year_name,
+             u.name as created_by_name
+      FROM exams e
+      LEFT JOIN academic_years ay ON e.academic_year_id = ay.id
+      LEFT JOIN users u ON e.created_by = u.id
+      WHERE e.school_id = $1
+    `;
+    const params = [req.tenantId];
+    let idx = 2;
+    if (academicYearId) {
+      query += ` AND e.academic_year_id = $${idx++}`;
+      params.push(academicYearId);
+    }
+    if (isActive !== undefined) {
+      query += ` AND e.is_active = $${idx++}`;
+      params.push(isActive === 'true');
+    }
+    query += ' ORDER BY e.created_at DESC';
+    const result = await pool.query(query, params);
+    res.json({ exams: result.rows });
+  } catch (err) {
+    console.error('Get exams error:', err);
+    res.status(500).json({ error: 'Failed to fetch exams' });
+  }
+};
+
+// Update Exam
+export const updateExam = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, examType, academicYearId, startDate, endDate, maxMarks, isActive } = req.body;
+    const result = await pool.query(
+      `UPDATE exams
+       SET title = COALESCE($1, title),
+           exam_type = COALESCE($2, exam_type),
+           academic_year_id = COALESCE($3, academic_year_id),
+           start_date = COALESCE($4, start_date),
+           end_date = COALESCE($5, end_date),
+           max_marks = COALESCE($6, max_marks),
+           is_active = COALESCE($7, is_active),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $8 AND school_id = $9 RETURNING *`,
+      [title, examType, academicYearId, startDate, endDate, maxMarks, isActive, id, req.tenantId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Exam not found' });
+    res.json({ message: 'Exam updated', exam: result.rows[0] });
+  } catch (err) {
+    console.error('Update exam error:', err);
+    res.status(500).json({ error: 'Failed to update exam' });
+  }
+};
+
+// ==========================================
+// RESULT MANAGEMENT - TEACHER FLOW
+// ==========================================
+
+// Get Teacher's Assigned Subjects & Classes
+export const getTeacherAssignedSubjects = async (req, res) => {
+  try {
+    // A teacher is assigned to subjects via subjects.teacher_id
+    const result = await pool.query(
+      `SELECT s.id as subject_id, s.name as subject_name,
+              c.id as class_id, c.name as class_name, c.section as class_section,
+              c.grade_level
+       FROM subjects s
+       JOIN classes c ON s.class_id = c.id
+       WHERE s.teacher_id = $1 AND s.school_id = $2
+       ORDER BY c.grade_level, c.section, s.name`,
+      [req.user.id, req.tenantId]
+    );
+    res.json({ assignments: result.rows });
+  } catch (err) {
+    console.error('Get teacher assigned subjects error:', err);
+    res.status(500).json({ error: 'Failed to fetch assigned subjects' });
+  }
+};
+
+// Get Grades for specific Exam + Class + Subject (for teacher to fill / admin to review)
+export const getExamGrades = async (req, res) => {
+  try {
+    const { examId, classId, subjectId } = req.params;
+
+    // Get all students in class with their existing grades for this exam+subject
+    const result = await pool.query(
+      `SELECT s.id as student_id, u.name as student_name, s.roll_number,
+              g.id as grade_id, g.marks_obtained, g.max_marks, g.grade_letter,
+              g.exam_id
+       FROM students s
+       JOIN users u ON s.user_id = u.id
+       LEFT JOIN grades g ON s.id = g.student_id
+           AND g.subject_id = $1
+           AND g.exam_id = $2
+       WHERE s.class_id = $3 AND s.school_id = $4
+       ORDER BY s.roll_number ASC, u.name ASC`,
+      [subjectId, examId, classId, req.tenantId]
+    );
+
+    // Get submission status
+    const submissionResult = await pool.query(
+      `SELECT status, submitted_at, teacher_id FROM exam_subject_submissions
+       WHERE exam_id = $1 AND class_id = $2 AND subject_id = $3`,
+      [examId, classId, subjectId]
+    );
+    const submission = submissionResult.rows[0] || { status: 'pending' };
+
+    res.json({ grades: result.rows, submission });
+  } catch (err) {
+    console.error('Get exam grades error:', err);
+    res.status(500).json({ error: 'Failed to fetch exam grades' });
+  }
+};
+
+// Save Exam Grades (Teacher) — supports 'draft' and 'submit' actions
+export const saveExamGrades = async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { examId, classId, subjectId } = req.params;
+    const { grades, action = 'draft' } = req.body;
+    // action: 'draft' | 'submit'
+
+    if (!grades || !Array.isArray(grades)) {
+      return res.status(400).json({ error: 'grades array is required' });
+    }
+
+    // Verify the exam belongs to this school
+    const examCheck = await client.query(
+      'SELECT id, max_marks FROM exams WHERE id = $1 AND school_id = $2',
+      [examId, req.tenantId]
+    );
+    if (!examCheck.rows.length) {
+      return res.status(404).json({ error: 'Exam not found' });
+    }
+    const examMaxMarks = examCheck.rows[0].max_marks;
+
+    await client.query('BEGIN');
+
+    for (const g of grades) {
+      const { studentId, marksObtained, maxMarks, gradeLetter } = g;
+      const parsedMarks = marksObtained === '' ? null : marksObtained;
+      const parsedMax = maxMarks || examMaxMarks || 100;
+
+      // Check if grade record already exists
+      const existing = await client.query(
+        `SELECT id FROM grades WHERE student_id = $1 AND subject_id = $2 AND exam_id = $3`,
+        [studentId, subjectId, examId]
+      );
+
+      if (existing.rows.length > 0) {
+        await client.query(
+          `UPDATE grades
+           SET marks_obtained = $1, max_marks = $2, grade_letter = $3,
+               entered_by = $4, exam_date = CURRENT_DATE
+           WHERE id = $5`,
+          [parsedMarks, parsedMax, gradeLetter || null, req.user.id, existing.rows[0].id]
+        );
+      } else {
+        await client.query(
+          `INSERT INTO grades (student_id, subject_id, class_id, exam_type, exam_id, marks_obtained, max_marks, grade_letter, entered_by, exam_date)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_DATE)`,
+          [studentId, subjectId, classId, 'exam', examId, parsedMarks, parsedMax, gradeLetter || null, req.user.id]
+        );
+      }
+    }
+
+    // Upsert submission record
+    const newStatus = action === 'submit' ? 'submitted' : 'draft';
+    const submittedAt = action === 'submit' ? 'CURRENT_TIMESTAMP' : 'NULL';
+
+    await client.query(
+      `INSERT INTO exam_subject_submissions (school_id, exam_id, class_id, subject_id, teacher_id, status, submitted_at)
+       VALUES ($1, $2, $3, $4, $5, $6, ${action === 'submit' ? 'CURRENT_TIMESTAMP' : 'NULL'})
+       ON CONFLICT (exam_id, class_id, subject_id)
+       DO UPDATE SET
+         status = $6,
+         teacher_id = $5,
+         submitted_at = ${action === 'submit' ? 'CURRENT_TIMESTAMP' : 'exam_subject_submissions.submitted_at'},
+         updated_at = CURRENT_TIMESTAMP`,
+      [req.tenantId, examId, classId, subjectId, req.user.id, newStatus]
+    );
+
+    await client.query('COMMIT');
+    res.json({ message: action === 'submit' ? 'Marks submitted to admin successfully' : 'Draft saved successfully', status: newStatus });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Save exam grades error:', err);
+    res.status(500).json({ error: 'Failed to save grades' });
+  } finally {
+    client.release();
+  }
+};
+
+// ==========================================
+// RESULT MANAGEMENT - ADMIN FLOW
+// ==========================================
+
+// Get Submission Matrix for a Class + Exam (Admin view: which subjects submitted, which pending)
+export const getExamClassMatrix = async (req, res) => {
+  try {
+    const { examId, classId } = req.params;
+
+    // Get all subjects for this class along with their submission status
+    const result = await pool.query(
+      `SELECT s.id as subject_id, s.name as subject_name,
+              u.name as teacher_name, u.id as teacher_id,
+              COALESCE(ess.status, 'pending') as submission_status,
+              ess.submitted_at
+       FROM subjects s
+       LEFT JOIN users u ON s.teacher_id = u.id
+       LEFT JOIN exam_subject_submissions ess
+         ON ess.subject_id = s.id AND ess.exam_id = $1 AND ess.class_id = $2
+       WHERE s.class_id = $2 AND s.school_id = $3
+       ORDER BY s.name`,
+      [examId, classId, req.tenantId]
+    );
+
+    // Get publication status for this class+exam
+    const pubResult = await pool.query(
+      `SELECT is_published, published_at FROM exam_class_publications
+       WHERE exam_id = $1 AND class_id = $2`,
+      [examId, classId]
+    );
+    const publication = pubResult.rows[0] || { is_published: false };
+
+    // Summary counts
+    const subjects = result.rows;
+    const submittedCount = subjects.filter(s => s.submission_status === 'submitted').length;
+    const totalCount = subjects.length;
+
+    res.json({
+      subjects,
+      publication,
+      summary: { submitted: submittedCount, total: totalCount, pending: totalCount - submittedCount }
+    });
+  } catch (err) {
+    console.error('Get exam class matrix error:', err);
+    res.status(500).json({ error: 'Failed to fetch submission matrix' });
+  }
+};
+
+// Publish Class Result (Admin) — make results visible to students/parents
+export const publishClassResult = async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { examId, classId } = req.params;
+
+    // Verify exam belongs to school
+    const examCheck = await client.query(
+      'SELECT id, title FROM exams WHERE id = $1 AND school_id = $2',
+      [examId, req.tenantId]
+    );
+    if (!examCheck.rows.length) {
+      return res.status(404).json({ error: 'Exam not found' });
+    }
+
+    await client.query('BEGIN');
+
+    // Check constraint: All subjects for this class must be submitted by teachers
+    const totalSubjRes = await client.query(
+      `SELECT COUNT(*) FROM subjects WHERE class_id = $1 AND school_id = $2`,
+      [classId, req.tenantId]
+    );
+    const totalSubjects = parseInt(totalSubjRes.rows[0].count, 10);
+
+    if (totalSubjects === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Cannot publish result: No subjects defined for this class.' });
+    }
+
+    const submittedSubjRes = await client.query(
+      `SELECT COUNT(*) FROM exam_subject_submissions WHERE exam_id = $1 AND class_id = $2 AND status = 'submitted'`,
+      [examId, classId]
+    );
+    const submittedSubjects = parseInt(submittedSubjRes.rows[0].count, 10);
+
+    if (submittedSubjects < totalSubjects) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: `Cannot publish result yet. Only ${submittedSubjects} of ${totalSubjects} subject marksheets have been submitted by teachers. All subject marks must be submitted before publishing.`
+      });
+    }
+
+    // Upsert publication record
+    await client.query(
+      `INSERT INTO exam_class_publications (school_id, exam_id, class_id, is_published, published_at, published_by)
+       VALUES ($1, $2, $3, true, CURRENT_TIMESTAMP, $4)
+       ON CONFLICT (exam_id, class_id)
+       DO UPDATE SET
+         is_published = true,
+         published_at = CURRENT_TIMESTAMP,
+         published_by = $4`,
+      [req.tenantId, examId, classId, req.user.id]
+    );
+
+    // Send notifications to all students in this class
+    const studentsResult = await client.query(
+      `SELECT s.user_id, u.name as student_name, u2.id as parent_user_id
+       FROM students s
+       JOIN users u ON s.user_id = u.id
+       LEFT JOIN users u2 ON s.parent_id = u2.id
+       WHERE s.class_id = $1 AND s.school_id = $2`,
+      [classId, req.tenantId]
+    );
+
+    const examTitle = examCheck.rows[0].title;
+    for (const row of studentsResult.rows) {
+      // Notify student
+      await client.query(
+        `INSERT INTO notifications (user_id, title, message, notification_type, reference_type)
+         VALUES ($1, $2, $3, 'result', 'exam')`,
+        [row.user_id, `Result Published: ${examTitle}`, `Your results for ${examTitle} have been published. Check your report card.`, ]
+      );
+      // Notify parent
+      if (row.parent_user_id) {
+        await client.query(
+          `INSERT INTO notifications (user_id, title, message, notification_type, reference_type)
+           VALUES ($1, $2, $3, 'result', 'exam')`,
+          [row.parent_user_id, `Ward's Result Published: ${examTitle}`, `Results for ${examTitle} have been published for ${row.student_name}. View the report card.`]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({ message: 'Result published successfully and notifications sent' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Publish class result error:', err);
+    res.status(500).json({ error: 'Failed to publish result' });
+  } finally {
+    client.release();
+  }
+};
+
+// ==========================================
+// RESULT MANAGEMENT - STUDENT / PARENT VIEW
+// ==========================================
+
+// Get Published Results for a student (used by student, parent, admin)
+export const getStudentPublishedResults = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const { examId } = req.query;
+
+    // Verify student belongs to this school
+    const studentCheck = await pool.query(
+      `SELECT s.id, s.class_id, u.name as student_name, s.student_id as enrollment_number,
+              s.roll_number, c.name as class_name, c.section as class_section
+       FROM students s
+       JOIN users u ON s.user_id = u.id
+       LEFT JOIN classes c ON s.class_id = c.id
+       WHERE s.id = $1 AND s.school_id = $2`,
+      [studentId, req.tenantId]
+    );
+    if (!studentCheck.rows.length) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+    const student = studentCheck.rows[0];
+
+    // Get all published exams for student's class
+    let examQuery = `
+      SELECT e.id as exam_id, e.title, e.exam_type, e.max_marks,
+             e.start_date, e.end_date,
+             ecp.published_at, ecp.is_published,
+             ay.year_name
+      FROM exams e
+      JOIN exam_class_publications ecp ON ecp.exam_id = e.id AND ecp.class_id = $1
+      LEFT JOIN academic_years ay ON e.academic_year_id = ay.id
+      WHERE e.school_id = $2 AND ecp.is_published = true
+    `;
+    const params = [student.class_id, req.tenantId];
+    if (examId) {
+      examQuery += ` AND e.id = $3`;
+      params.push(examId);
+    }
+    examQuery += ' ORDER BY e.created_at DESC';
+    const examsResult = await pool.query(examQuery, params);
+
+    // If specific exam requested, also fetch grades
+    let grades = [];
+    let selectedExam = null;
+    if (examId && examsResult.rows.length > 0) {
+      selectedExam = examsResult.rows[0];
+      const gradesResult = await pool.query(
+        `SELECT g.marks_obtained, g.max_marks, g.grade_letter,
+                sub.name as subject_name, sub.id as subject_id,
+                u.name as entered_by_name
+         FROM grades g
+         JOIN subjects sub ON g.subject_id = sub.id
+         LEFT JOIN users u ON g.entered_by = u.id
+         WHERE g.student_id = $1 AND g.exam_id = $2
+         ORDER BY sub.name`,
+        [studentId, examId]
+      );
+      grades = gradesResult.rows;
+    }
+
+    // Calculate summary if grades available
+    let summary = null;
+    if (grades.length > 0) {
+      const totalMax = grades.reduce((s, g) => s + Number(g.max_marks || 0), 0);
+      const totalObtained = grades.reduce((s, g) => s + Number(g.marks_obtained || 0), 0);
+      const percentage = totalMax > 0 ? ((totalObtained / totalMax) * 100).toFixed(2) : '0';
+      const passed = grades.every(g => g.marks_obtained !== null && Number(g.marks_obtained) >= (Number(g.max_marks) * 0.33));
+      summary = { totalMax, totalObtained, percentage, passed };
+    }
+
+    res.json({
+      student,
+      publishedExams: examsResult.rows,
+      selectedExam,
+      grades,
+      summary
+    });
+  } catch (err) {
+    console.error('Get student published results error:', err);
+    res.status(500).json({ error: 'Failed to fetch published results' });
+  }
+};
+
+// Get student's own published results (for student/parent self-service)
+export const getMyPublishedResults = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { examId } = req.query;
+
+    // Find student record for this user
+    const studentQuery = await pool.query(
+      `SELECT s.id, s.class_id, u.name as student_name, s.student_id as enrollment_number,
+              s.roll_number, c.name as class_name, c.section as class_section
+       FROM students s
+       JOIN users u ON s.user_id = u.id
+       LEFT JOIN classes c ON s.class_id = c.id
+       WHERE s.user_id = $1 AND s.school_id = $2`,
+      [userId, req.tenantId]
+    );
+
+    // If parent, find their ward
+    let student = studentQuery.rows[0];
+    if (!student && req.user.role === 'parent') {
+      const wardQuery = await pool.query(
+        `SELECT s.id, s.class_id, u.name as student_name, s.student_id as enrollment_number,
+                s.roll_number, c.name as class_name, c.section as class_section
+         FROM students s
+         JOIN users u ON s.user_id = u.id
+         LEFT JOIN classes c ON s.class_id = c.id
+         WHERE s.parent_id = $1 AND s.school_id = $2
+         LIMIT 1`,
+        [userId, req.tenantId]
+      );
+      student = wardQuery.rows[0];
+    }
+
+    if (!student) return res.status(404).json({ error: 'Student record not found' });
+
+    req.params = { ...req.params, studentId: student.id };
+    return getStudentPublishedResults(req, res);
+  } catch (err) {
+    console.error('Get my published results error:', err);
+    res.status(500).json({ error: 'Failed to fetch results' });
   }
 };

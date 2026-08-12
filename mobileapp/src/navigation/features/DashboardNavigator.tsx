@@ -12,7 +12,6 @@ import AnnouncementsScreen from '../../screens/communication/AnnouncementsScreen
 import AdminResultsOverviewScreen from '../../screens/dashboards/AdminResultsOverviewScreen';
 import AdminAttendanceOverviewScreen from '../../screens/dashboards/AdminAttendanceOverviewScreen';
 import StudentPaymentsScreen from '../../screens/fees/StudentPaymentsScreen';
-import AdminClassesScreen from '../../screens/classes/AdminClassesScreen';
 import MessagingScreen from '../../screens/communication/MessagingScreen';
 import TeacherScheduleScreen from '../../screens/schedule/TeacherScheduleScreen';
 import StudentScheduleScreen from '../../screens/schedule/StudentScheduleScreen';
@@ -30,7 +29,6 @@ export type DashboardStackParamList = {
   AdminResultsOverview: undefined;
   AdminAttendanceOverview: undefined;
   StudentPayments: undefined;
-  AdminClasses: undefined;
   Messaging: undefined;
   TeacherSchedule: undefined;
   StudentSchedule: undefined;
@@ -99,11 +97,6 @@ const DashboardNavigator: React.FC = () => {
         name="StudentPayments"
         component={StudentPaymentsScreen}
         options={{ title: 'Payments Portal' }}
-      />
-      <Stack.Screen
-        name="AdminClasses"
-        component={AdminClassesScreen}
-        options={{ title: 'Manage Classes' }}
       />
       <Stack.Screen
         name="Messaging"
