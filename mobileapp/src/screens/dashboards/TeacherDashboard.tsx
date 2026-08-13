@@ -124,7 +124,7 @@ const TeacherDashboard: React.FC = () => {
   };
 
   const handleAssignHomework = () => {
-    navigation.navigate('AssignHomework');
+    navigation.navigate('Assignments');
   };
 
   const handleUpdateResults = () => {
@@ -216,11 +216,11 @@ const TeacherDashboard: React.FC = () => {
                   activeOpacity={0.7}
                   onPress={() => {
                     setShowDrawer(false);
-                    navigation.navigate('AssignHomework' as never);
+                    navigation.navigate('Assignments' as never);
                   }}
                 >
                   <AssignmentIcon size={22} color="#003fb1" />
-                  <Text style={styles.drawerNavItemText}>Assign Homework</Text>
+                  <Text style={styles.drawerNavItemText}>Assignments</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -314,7 +314,7 @@ const TeacherDashboard: React.FC = () => {
               <Text style={styles.bentoCardText}>Mark Attendance</Text>
             </TouchableOpacity>
 
-            {/* Assign Homework */}
+            {/* Assignments */}
             <TouchableOpacity
               style={[styles.bentoCard, styles.bentoCardSecondary]}
               onPress={handleAssignHomework}
@@ -323,7 +323,7 @@ const TeacherDashboard: React.FC = () => {
               <View style={[styles.iconCircle, styles.iconCircleTranslucent]}>
                 <AssignmentIcon size={24} color="#00714e" />
               </View>
-              <Text style={[styles.bentoCardText, styles.bentoTextGreen]}>Assign Homework</Text>
+              <Text style={[styles.bentoCardText, styles.bentoTextGreen]}>Assignments</Text>
             </TouchableOpacity>
 
             {/* Update Results */}

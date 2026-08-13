@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import DashboardNavigator from '../features/DashboardNavigator';
 import AssignmentsNavigator from '../features/AssignmentsNavigator';
-import ParentDashboard from '../../screens/dashboards/ParentDashboard';
+import ParentPortalNavigator from '../features/ParentPortalNavigator';
 import AnnouncementsScreen from '../../screens/communication/AnnouncementsScreen';
 import ProfileNavigator from '../features/ProfileNavigator';
 import { DashboardIcon, AssignmentIcon, MessageIcon, ProfileIcon, MegaphoneIcon } from '../../assets/svgs';
@@ -82,7 +82,7 @@ const StudentTabs: React.FC = () => {
       />
       <Tab.Screen
         name="ParentPortalTab"
-        component={ParentDashboard}
+        component={ParentPortalNavigator}
         options={{ title: 'Parent Portal' }}
       />
       <Tab.Screen name="ProfileTab" component={ProfileNavigator} options={{ title: 'Profile' }} />

@@ -1,199 +1,206 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   SafeAreaView,
   Image,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation } from '@react-navigation/native';
-
-interface StudentResult {
-  id: string;
-  name: string;
-  avatar: string;
-  className: string;
-  subject: string;
-  score: number;
-  grade: string;
-  status: 'passed' | 'failed' | 'warning';
-}
-
-const MOCK_RESULTS: StudentResult[] = [
-  {
-    id: '1',
-    name: 'Alex Rivera',
-    avatar:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuBHNQnXBZokhepAnwoW8uhCkr4eNEyFySOS2yaWZrgNBiid5VvOj7EkHJV6ujJTOt4I1HJE8k3xjPMyMBl8OO5Aj7XYkTPDXkJJfTNKJ356m3EKKBe6b1wnM4FXrZBE2Y_b_63zx8q58uoDKkJTNonXOPjRbMRFwJZEiLCLp5REMHmv8ohWeU9Jld_y3nwrNoZxkrjPNQ-F_fjkovnizTAaC8x0skfKVXvEsy63w73fAkGU8sHUlAHl',
-    className: 'Grade 10-B',
-    subject: 'Science',
-    score: 92,
-    grade: 'A',
-    status: 'passed',
-  },
-  {
-    id: '2',
-    name: 'Beatrice Silva',
-    avatar:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuC1sR-2NYx8TaKdbhsp7XR1X2LdIEjBO3XboKebnufHhqMkWKifyWvHSvu0ufL4Bcv5NBEDjeK18L2uj8QpKDHcu8jJS7VZNoZA2zdNZKiPgheRdMiS-Tecl954gqFMbzsBJTo0cyvXYEqoh5-ouBfzZ6mjmFKg3AosVc7SD8w8XemR0xgGqD3GWYzUpLPN00oNkHtx9OehgrgHmoTI9-tIzRx2U6ZdcdHaxmP0L-NhAhz9eDdTjiUX',
-    className: 'Grade 10-B',
-    subject: 'Science',
-    score: 85,
-    grade: 'B+',
-    status: 'passed',
-  },
-  {
-    id: '3',
-    name: 'Marcus Thorne',
-    avatar:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuCq9wJY7B-K0Ihxiip8VMrikSOrHNoy5eFssAh2XF217PZHiLfG07ko4gc1cP5Fhlvdpu6CbC76K4zrD7k8ORQphKTcmkE_Vzb16BV3AK-oI9_HovLLZs6XYD3_iRpA_tUnpcR3Uv557n0VTrtV6uG3uQyH3IPsABlwhmMuoVZZCoF-XsyzSUoIpBjdWmXJcRK6AF-uBqBBKvzqf-oWQCBy-wFZOptOfYrAxfhywXZtqzY-ZmNfKYeN',
-    className: 'Grade 12-A',
-    subject: 'Physics',
-    score: 72,
-    grade: 'C+',
-    status: 'warning',
-  },
-  {
-    id: '4',
-    name: 'Linh Nguyen',
-    avatar:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuAzWypNf-6tAHJ5nXLngWKe6x1JCnJMcKZhr-H_HgSJQKSPQdFHrLmKTv_6OEGHWeBTRi504sFoNfgOF8R4rUwYEc9OiPRFqP95EQuis9_77FAQOIu9NbPNqFTbr8RToo_ysYCBA-7FheYzmFgg8L02TwKsBfHWLSlyHtI-T_pYq6D3zSXPk-sjEykqjsh-uk4Q7UmOTN2c4Z7LOwn8JOgZkoqb28jxkhENTwPhC0AfHwtW54pyAIcV',
-    className: 'Grade 11-C',
-    subject: 'Math',
-    score: 48,
-    grade: 'F',
-    status: 'failed',
-  },
-];
+import academicService from '../../services/academicService';
 
 const AdminResultsOverviewScreen: React.FC = () => {
   const navigation = useNavigation();
-  const [query, setQuery] = useState('');
-  const [selectedClass, setSelectedClass] = useState('All');
+  const [classes, setClasses] = useState<any[]>([]);
+  const [exams, setExams] = useState<any[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState('');
+  const [selectedExamId, setSelectedExamId] = useState('');
+  
+  const [results, setResults] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [initialLoad, setInitialLoad] = useState(true);
 
-  const filteredResults = MOCK_RESULTS.filter((r) => {
-    const matchesSearch =
-      r.name.toLowerCase().includes(query.toLowerCase()) ||
-      r.subject.toLowerCase().includes(query.toLowerCase());
-    const matchesClass = selectedClass === 'All' || r.className === selectedClass;
-    return matchesSearch && matchesClass;
-  });
+  useEffect(() => {
+    Promise.allSettled([
+      academicService.getClasses(),
+      academicService.getExams()
+    ]).then(([clsRes, examRes]) => {
+      if (clsRes.status === 'fulfilled' && Array.isArray(clsRes.value)) {
+        setClasses(clsRes.value);
+      }
+      if (examRes.status === 'fulfilled' && Array.isArray(examRes.value)) {
+        setExams(examRes.value);
+      }
+      setInitialLoad(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (selectedClassId && selectedExamId) {
+      setLoading(true);
+      academicService.getExamResults(selectedClassId, selectedExamId)
+        .then(data => {
+          // The matrix endpoint returns an object like { subjects: [], summary: {} }
+          if (data && data.subjects) {
+            setResults(data.subjects);
+          } else if (Array.isArray(data)) {
+            setResults(data);
+          } else {
+            setResults([]);
+          }
+        })
+        .catch(err => {
+          Alert.alert('Error', 'Failed to fetch results.');
+          setResults([]);
+        })
+        .finally(() => setLoading(false));
+    } else {
+      setResults([]);
+    }
+  }, [selectedClassId, selectedExamId]);
+
+  const allMarksEntered = React.useMemo(() => {
+    if (results.length === 0) return false;
+    return results.every((sub: any) => sub.submission_status === 'submitted');
+  }, [results]);
+
+  const handlePublish = async () => {
+    if (!allMarksEntered) return;
+    try {
+      setPublishing(true);
+      await academicService.publishExamResults(selectedClassId, selectedExamId);
+      Alert.alert('Success', 'Results published successfully! Parents can now view them on their portal.');
+    } catch (err) {
+      Alert.alert('Error', 'Failed to publish results. Please try again.');
+    } finally {
+      setPublishing(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Exam Reports</Text>
+        <Text style={styles.headerSubtitle}>Select class and exam to view results</Text>
+      </View>
+
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* GPA Summary Card */}
-        <View style={styles.statsSummaryCard}>
-          <View style={styles.statBox}>
-            <Text style={styles.statLabel}>School GPA</Text>
-            <Text style={[styles.statValue, styles.textBlue]}>3.62</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Text style={styles.statLabel}>Passing Rate</Text>
-            <Text style={[styles.statValue, styles.textGreen]}>94.8%</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Text style={styles.statLabel}>Top Subject</Text>
-            <Text style={[styles.statValue, styles.textOrange]}>Science</Text>
-          </View>
-        </View>
-
-        {/* Search & Filter Section */}
-        <View style={styles.filterSection}>
-          <View style={styles.searchBar}>
-            <Icon name="magnify" size={20} color="#737686" style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search by student name or subject..."
-              placeholderTextColor="#737686"
-              value={query}
-              onChangeText={setQuery}
-            />
-          </View>
-
-          {/* Class Chips */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chipsContainer}
-          >
-            {['All', 'Grade 10-B', 'Grade 11-C', 'Grade 12-A'].map((c) => (
-              <TouchableOpacity
-                key={c}
-                style={[styles.chip, selectedClass === c && styles.chipActive]}
-                onPress={() => setSelectedClass(c)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.chipText, selectedClass === c && styles.chipTextActive]}>
-                  {c}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Results List */}
-        <View style={styles.listContainer}>
-          <Text style={styles.listHeaderTitle}>Student Academic Results</Text>
-          {filteredResults.length === 0 ? (
-            <Text style={styles.emptyText}>No results match your filters.</Text>
-          ) : (
-            filteredResults.map((item) => (
-              <View key={item.id} style={styles.resultRow}>
-                <View style={styles.studentMeta}>
-                  <View style={styles.avatarWrapper}>
-                    <Image style={styles.avatar} source={{ uri: item.avatar }} />
-                  </View>
-                  <View style={styles.nameBlock}>
-                    <Text style={styles.studentName}>{item.name}</Text>
-                    <Text style={styles.subText}>
-                      {item.className} • {item.subject}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.scoreBlock}>
-                  <Text style={styles.scoreText}>{item.score}%</Text>
-                  <View
-                    style={[
-                      styles.gradeBadge,
-                      item.status === 'passed' && styles.badgePassed,
-                      item.status === 'warning' && styles.badgeWarning,
-                      item.status === 'failed' && styles.badgeFailed,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.gradeText,
-                        item.status === 'passed' && styles.textPassed,
-                        item.status === 'warning' && styles.textWarning,
-                        item.status === 'failed' && styles.textFailed,
-                      ]}
+        {initialLoad ? (
+          <ActivityIndicator size="large" color="#003fb1" style={{ marginTop: 40 }} />
+        ) : (
+          <>
+            {/* Filter Section */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Select Class</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsContainer}>
+                {classes.length === 0 ? (
+                  <Text style={styles.emptyText}>No classes found</Text>
+                ) : (
+                  classes.map((c) => (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={[styles.chip, selectedClassId === c.id && styles.chipActive]}
+                      onPress={() => setSelectedClassId(c.id)}
+                      activeOpacity={0.7}
                     >
-                      {item.grade}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            ))
-          )}
-        </View>
+                      <Text style={[styles.chipText, selectedClassId === c.id && styles.chipTextActive]}>
+                        {c.name || c.class_name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
 
-        {/* Action Button to close */}
-        <TouchableOpacity
-          style={styles.closeBtn}
-          onPress={() => navigation.goBack()}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.closeBtnText}>Return to Dashboard</Text>
-        </TouchableOpacity>
+              <Text style={[styles.filterLabel, { marginTop: 16 }]}>Select Exam</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsContainer}>
+                {exams.length === 0 ? (
+                  <Text style={styles.emptyText}>No exams found</Text>
+                ) : (
+                  exams.map((e) => (
+                    <TouchableOpacity
+                      key={e.id}
+                      style={[styles.chip, selectedExamId === e.id && styles.chipActive]}
+                      onPress={() => setSelectedExamId(e.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.chipText, selectedExamId === e.id && styles.chipTextActive]}>
+                        {e.title || e.name || e.exam_name || 'Unnamed Exam'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
+            </View>
+
+            {/* Results Section */}
+            {selectedClassId && selectedExamId ? (
+              <View style={styles.listContainer}>
+                {loading ? (
+                  <ActivityIndicator size="small" color="#003fb1" style={{ marginVertical: 20 }} />
+                ) : results.length === 0 ? (
+                  <Text style={styles.emptyText}>No subjects found for this class.</Text>
+                ) : (
+                  <View>
+                    <Text style={styles.listHeaderTitle}>Subject Marking Status</Text>
+                    {results.map((sub: any) => (
+                      <View key={sub.subject_id || sub.id || Math.random()} style={styles.studentCard}>
+                        <View style={styles.subjectRow}>
+                          <View>
+                            <Text style={styles.subjectName}>{sub.subject_name || sub.name || 'Unknown Subject'}</Text>
+                            <Text style={styles.teacherName}>Teacher: {sub.teacher_name || 'Unassigned'}</Text>
+                          </View>
+                          {sub.submission_status === 'submitted' ? (
+                            <View style={[styles.unmarkedBadge, { backgroundColor: '#82f5c1' }]}>
+                              <Text style={[styles.unmarkedText, { color: '#005137' }]}>Submitted</Text>
+                            </View>
+                          ) : (
+                            <View style={styles.unmarkedBadge}>
+                              <Text style={styles.unmarkedText}>Pending</Text>
+                            </View>
+                          )}
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            ) : (
+              <View style={styles.placeholderContainer}>
+                <Text style={styles.placeholderText}>Please select both a class and an exam to view the result sheet.</Text>
+              </View>
+            )}
+
+          </>
+        )}
       </ScrollView>
+
+      {/* Publish Footer */}
+      {selectedClassId && selectedExamId && !loading && results.length > 0 && (
+        <View style={styles.footer}>
+          {!allMarksEntered && (
+            <Text style={styles.footerWarning}>
+              Publishing is disabled. Some subjects are still unmarked by teachers.
+            </Text>
+          )}
+          <TouchableOpacity
+            style={[styles.publishBtn, !allMarksEntered && styles.publishBtnDisabled]}
+            disabled={!allMarksEntered || publishing}
+            onPress={handlePublish}
+            activeOpacity={0.8}
+          >
+            {publishing ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <Text style={styles.publishBtnText}>Publish Results to Parents</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
     </SafeAreaView>
   );
 };
@@ -203,70 +210,42 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9ff',
   },
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderColor: '#eef0f6',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#121c28',
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: '#737686',
+    marginTop: 4,
+  },
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 40,
-  },
-  statsSummaryCard: {
-    flexDirection: 'row',
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#c3c5d7',
-    borderRadius: 16,
-    paddingVertical: 14,
-    marginBottom: 20,
-  },
-  statBox: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statDivider: {
-    width: 1,
-    backgroundColor: '#c3c5d7',
-  },
-  statLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#737686',
-    letterSpacing: 0.5,
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: '800',
-    marginTop: 4,
-  },
-  textBlue: {
-    color: '#003fb1',
-  },
-  textGreen: {
-    color: '#006c4a',
-  },
-  textOrange: {
-    color: '#723b00',
+    paddingBottom: 100,
   },
   filterSection: {
-    marginBottom: 20,
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#c3c5d7',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    height: 44,
-    marginBottom: 12,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
   },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
+  filterLabel: {
+    fontSize: 12,
+    fontWeight: '700',
     color: '#121c28',
-    padding: 0,
+    marginBottom: 8,
   },
   chipsContainer: {
     gap: 8,
@@ -288,112 +267,129 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: '#ffffff',
   },
+  placeholderContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  placeholderText: {
+    fontSize: 13,
+    color: '#737686',
+    textAlign: 'center',
+  },
+  emptyText: {
+    fontSize: 13,
+    color: '#737686',
+    fontStyle: 'italic',
+  },
   listContainer: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#c3c5d7',
-    borderRadius: 16,
-    padding: 16,
+    marginBottom: 20,
   },
   listHeaderTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
     color: '#121c28',
     marginBottom: 16,
   },
-  emptyText: {
-    textAlign: 'center',
-    color: '#737686',
-    marginVertical: 20,
-    fontSize: 13,
-  },
-  resultRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f8f9ff',
-    paddingVertical: 12,
-  },
-  studentMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  avatarWrapper: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    overflow: 'hidden',
+  studentCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#c3c5d7',
+    borderColor: '#eef0f6',
+    padding: 16,
+    marginBottom: 12,
+  },
+  studentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f2f8',
+    paddingBottom: 10,
   },
   avatar: {
-    width: '100%',
-    height: '100%',
-  },
-  nameBlock: {
-    marginLeft: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#eef0f6',
   },
   studentName: {
     fontSize: 14,
     fontWeight: '700',
     color: '#121c28',
+    marginLeft: 10,
   },
-  subText: {
-    fontSize: 11,
-    color: '#737686',
-    marginTop: 2,
+  subjectsContainer: {
+    gap: 8,
   },
-  scoreBlock: {
-    alignItems: 'flex-end',
-    gap: 4,
+  subjectRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#f8f9ff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
   },
-  scoreText: {
-    fontSize: 14,
+  subjectName: {
+    fontSize: 15,
     fontWeight: '700',
     color: '#121c28',
+    marginBottom: 4,
   },
-  gradeBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+  teacherName: {
+    fontSize: 12,
+    color: '#737686',
   },
-  badgePassed: {
-    backgroundColor: '#82f5c1',
-  },
-  badgeWarning: {
-    backgroundColor: '#ffdcc3',
-  },
-  badgeFailed: {
-    backgroundColor: '#ffdad6',
-  },
-  gradeText: {
-    fontSize: 9,
+  markedText: {
+    fontSize: 14,
     fontWeight: '800',
-  },
-  textPassed: {
     color: '#005137',
   },
-  textWarning: {
-    color: '#6e3900',
+  unmarkedBadge: {
+    backgroundColor: '#ffdad6',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
   },
-  textFailed: {
+  unmarkedText: {
+    fontSize: 10,
+    fontWeight: '700',
     color: '#ba1a1a',
   },
-  closeBtn: {
-    borderWidth: 1,
-    borderColor: '#c3c5d7',
-    borderRadius: 10,
+  footer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#ffffff',
+    borderTopWidth: 1,
+    borderTopColor: '#eef0f6',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 24, // extra padding for iOS home indicator
+  },
+  footerWarning: {
+    fontSize: 11,
+    color: '#ba1a1a',
+    textAlign: 'center',
+    marginBottom: 8,
+    fontWeight: '600',
+  },
+  publishBtn: {
+    backgroundColor: '#003fb1',
     height: 48,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 24,
   },
-  closeBtnText: {
-    fontSize: 13,
+  publishBtnDisabled: {
+    backgroundColor: '#c3c5d7',
+  },
+  publishBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
     fontWeight: '700',
-    color: '#434654',
   },
 });
 

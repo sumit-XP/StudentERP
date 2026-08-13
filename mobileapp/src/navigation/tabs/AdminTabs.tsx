@@ -3,14 +3,16 @@ import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import DashboardNavigator from '../features/DashboardNavigator';
 import UsersNavigator from '../features/UsersNavigator';
+import ResultsNavigator from '../features/ResultsNavigator';
 import AnnouncementsNavigator from '../features/AnnouncementsNavigator';
 import MessagingNavigator from '../features/MessagingNavigator';
 import ProfileNavigator from '../features/ProfileNavigator';
-import { DashboardIcon, UsersIcon, MegaphoneIcon, MessageIcon, ProfileIcon } from '../../assets/svgs';
+import { DashboardIcon, UsersIcon, ReportIcon, MegaphoneIcon, MessageIcon, ProfileIcon } from '../../assets/svgs';
 
 export type AdminTabsParamList = {
   DashboardTab: undefined;
   UsersTab: undefined;
+  ReportsTab: undefined;
   AnnouncementsTab: undefined;
   MessagesTab: undefined;
   ProfileTab: undefined;
@@ -55,6 +57,8 @@ const AdminTabs: React.FC = () => {
             return <DashboardIcon size={size} color={color} />;
           } else if (route.name === 'UsersTab') {
             return <UsersIcon size={size} color={color} />;
+          } else if (route.name === 'ReportsTab') {
+            return <ReportIcon size={size} color={color} />;
           } else if (route.name === 'AnnouncementsTab') {
             return <MegaphoneIcon size={size} color={color} />;
           } else if (route.name === 'MessagesTab') {
@@ -74,6 +78,11 @@ const AdminTabs: React.FC = () => {
         name="UsersTab"
         component={UsersNavigator}
         options={{ title: 'Users', unmountOnBlur: true }}
+      />
+      <Tab.Screen
+        name="ReportsTab"
+        component={ResultsNavigator}
+        options={{ title: 'Reports', unmountOnBlur: true }}
       />
       <Tab.Screen
         name="AnnouncementsTab"

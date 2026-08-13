@@ -45,6 +45,21 @@ export const academicService = {
     const response = await apiClient.post(`/academic/classes/${classId}/subjects/${subjectId}/grades`, { gradesData });
     return response.data;
   },
+
+  getExams: async () => {
+    const response = await apiClient.get('/academic/exams');
+    return response.data?.exams || response.data?.data || response.data || [];
+  },
+
+  getExamResults: async (classId: string, examId: string) => {
+    const response = await apiClient.get(`/academic/exams/${examId}/classes/${classId}/matrix`);
+    return response.data?.results || response.data?.data || response.data || [];
+  },
+
+  publishExamResults: async (classId: string, examId: string) => {
+    const response = await apiClient.post(`/academic/exams/${examId}/classes/${classId}/publish`);
+    return response.data;
+  },
 };
 
 export default academicService;

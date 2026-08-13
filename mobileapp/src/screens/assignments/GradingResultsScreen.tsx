@@ -366,10 +366,7 @@ const GradingResultsScreen: React.FC = () => {
             <Text style={[styles.statsValue, styles.greenText]}>{`${classAvg}%`}</Text>
           </View>
 
-          <View style={styles.statsCard}>
-            <Text style={styles.statsLabel}>Due Date</Text>
-            <Text style={styles.statsValue}>Oct 24, 2023</Text>
-          </View>
+
         </View>
 
         {/* Filter & Search Bar */}

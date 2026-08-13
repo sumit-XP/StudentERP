@@ -7,12 +7,12 @@ import AssignmentsNavigator from '../features/AssignmentsNavigator';
 import AnnouncementsNavigator from '../features/AnnouncementsNavigator';
 import MessagingNavigator from '../features/MessagingNavigator';
 import ProfileNavigator from '../features/ProfileNavigator';
-import { DashboardIcon, FactCheckIcon, AssignmentIcon, MegaphoneIcon, MessageIcon, ProfileIcon } from '../../assets/svgs';
+import { DashboardIcon, FactCheckIcon, MegaphoneIcon, MessageIcon, ProfileIcon } from '../../assets/svgs';
 
 export type TeacherTabsParamList = {
   DashboardTab: undefined;
   AttendanceTab: undefined;
-  AssignmentsTab: undefined;
+
   AnnouncementsTab: undefined;
   MessagesTab: undefined;
   ProfileTab: undefined;
@@ -59,9 +59,7 @@ const TeacherTabs: React.FC = () => {
           if (route.name === 'AttendanceTab') {
             return <FactCheckIcon size={size} color={color} />;
           }
-          if (route.name === 'AssignmentsTab') {
-            return <AssignmentIcon size={size} color={color} />;
-          }
+
           if (route.name === 'AnnouncementsTab') {
             return <MegaphoneIcon size={size} color={color} />;
           }
@@ -84,11 +82,7 @@ const TeacherTabs: React.FC = () => {
         component={AttendanceNavigator}
         options={{ title: 'Attendance' }}
       />
-      <Tab.Screen
-        name="AssignmentsTab"
-        component={AssignmentsNavigator}
-        options={{ title: 'Assignments' }}
-      />
+
       <Tab.Screen
         name="AnnouncementsTab"
         component={AnnouncementsNavigator}

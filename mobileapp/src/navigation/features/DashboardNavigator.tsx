@@ -1,5 +1,6 @@
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
+import AssignmentsNavigator from './AssignmentsNavigator';
 import { useAuth } from '../../contexts/AuthContext';
 import AdminDashboard from '../../screens/dashboards/AdminDashboard';
 import TeacherDashboard from '../../screens/dashboards/TeacherDashboard';
@@ -22,6 +23,7 @@ import UserListScreen from '../../screens/users/UserListScreen';
 
 export type DashboardStackParamList = {
   Overview: undefined;
+  Assignments: undefined;
   GradingResults: undefined;
   AssignHomework: undefined;
   CreateAnnouncement: undefined;
@@ -62,6 +64,11 @@ const DashboardNavigator: React.FC = () => {
         name="Overview"
         component={DashboardScreen}
         options={{ title: 'Dashboard', headerShown: false }}
+      />
+      <Stack.Screen
+        name="Assignments"
+        component={AssignmentsNavigator}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="GradingResults"
